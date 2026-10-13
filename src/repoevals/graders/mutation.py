@@ -28,7 +28,6 @@ from ..util import apply_patch, copytree_overlay, glob_match, last_json
 from . import GradeContext
 from .tests import TreeGuard
 
-
 SAFE_TARGET = re.compile(r"^[\w./:\-\[\],=+@]+$")
 
 

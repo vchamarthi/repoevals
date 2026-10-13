@@ -1,4 +1,4 @@
-# Starter config for IntelPython/mkl_random (meson-python + mkl-devel). Untested scaffold.
+# Starter config for IntelPython/mkl_random (meson-python + mkl-devel).
 [repo]
 id = "mkl_random"
 url = "https://github.com/IntelPython/mkl_random"

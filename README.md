@@ -1,165 +1,251 @@
 # repoevals
 
-**Evals for AI coding agents that live in your repository: deterministic tasks, hidden answers, graded without an LLM.**
+Repository-native evaluations for AI coding agents.
 
-`repoevals` is a small, repo-agnostic framework for answering questions like *"Does our `AGENTS.md` actually help?"*,
-*"Which agent fixes our numerical bugs without breaking tolerances?"*, or *"Can this agent review our PRs without
-drowning maintainers in false alarms?"* — measured on your own code, with tests and graders the agent never sees.
+[![CI](https://github.com/vchamarthi/repoevals/actions/workflows/ci.yml/badge.svg)](https://github.com/vchamarthi/repoevals/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)
+![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
-A repository adopts it with **one config file and a folder of tasks**. The framework, its graders, statistics, and
-CI action live here, so each project does not have to vendor thousands of lines of eval code.
+repoevals measures how well AI coding agents work on **your** codebase. You keep a small config file and a folder
+of tasks in your repository; repoevals prepares an isolated workspace for each task, runs the agent, and grades the
+result with tests and checks the agent never sees. Grading is deterministic and uses no LLM, so the same run always
+gets the same score.
 
-```
-your-repo/
-  repoevals.toml                  # ~20 lines: test adapter, test/library globs, guidance files
-  .agent-evals/tasks/
-    fix_kmeans_empty_cluster/   # task.toml + instruction.md + setup.patch + hidden/tests/...
-    review_seeded_softmax/      # task.toml + review.patch + manifest.json (seeds, decoys)
-    test_chebyshev/             # task.toml + mutants/*.patch + oracle_tests/
-```
+- **Your tasks, your code** — bug fixes, features, builds, code reviews, test writing, numerical accuracy and
+  performance work, defined next to the code they exercise.
+- **Hidden answers** — hidden tests, reference solutions, mutants and review manifests stay outside the agent's
+  workspace, which contains no git history.
+- **Deterministic grading** — test runs, mutation analysis, matching against known review findings, and numerical
+  comparison against a trusted reference.
+- **Self-checking tasks** — `repoevals check` proves that every task fails when nothing is done and passes with the
+  reference solution. It needs no model and no API key, so it is safe to run on every pull request.
+- **Cheating detection** — test tampering, git-history mining, network access and edits to protected files are
+  flagged on every graded run.
+- **Comparisons you can trust** — repeated trials, pass@k, task-clustered confidence intervals and paired
+  comparisons between configurations, with cost and token usage.
+- **Any agent, any stack** — Claude Code, Codex, or any command-line agent; pytest, Bazel, CTest or any test command.
+
+## Contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Concepts](#concepts)
+- [Task types](#task-types)
+- [Running agents](#running-agents)
+- [Reading results](#reading-results)
+- [Continuous integration](#continuous-integration)
+- [Documentation](#documentation)
+- [Getting help](#getting-help)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Installation
+
+Requirements: Python 3.10 or newer, and git. repoevals has no runtime dependencies on Python 3.11+.
 
 ```bash
-pip install "repoevals @ git+https://github.com/vchamarthi/repoevals"   # PyPI release pending
-repoevals validate                                      # static checks, seconds
-repoevals check                                         # null agent fails, reference passes, spam rejected — no LLM, no secrets
-repoevals run --agent claude-code --arm guidance:raw --arm guidance:none --repeats 5
-repoevals report runs/<stamp>                           # pass rates with task-clustered CIs, paired arm deltas, pass@k, cost
+pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.1.0"
 ```
 
-> Status: **alpha (0.1)**. The core, the graders, and the example suite are covered by end-to-end tests. Intel
-> scientific-library task packs are scaffolds — see [Roadmap](#roadmap).
+Numerical tasks additionally need NumPy in the environment where your project's tests run.
 
-## Where this comes from
+To run agents you also need the agent's CLI installed and authenticated, for example `claude` (Claude Code) or
+`codex` (OpenAI Codex CLI).
 
-`repoevals` generalizes the design of [uxlfoundation/oneDAL#3818](https://github.com/uxlfoundation/oneDAL/pull/3818)
-("agent-eval tasks and graders for oneDAL, with no-LLM CI"). That PR introduced, for one C++ library, the families and
-rules reused here: hidden-test bug fixes mined from merged PRs, seeded-defect review with decoys and a clean-change
-control, human-review replay, test writing graded by mutant kill rate, history-free workspaces, and a CI self-check
-proving every task is solvable and every grader rejects the untouched tree. A reviewer on that PR noted that most of
-the grader logic is generic and does not belong in the library repository; `repoevals` is that extraction, made
-build-system-agnostic, hardened, and extended with results from the 2025–26 agent-evaluation literature.
-See [docs/research/01-pr3818.md](docs/research/01-pr3818.md) for a file-by-file analysis.
+## Quick start
 
-## Task families and graders
+### 1. Initialize your repository
 
-| family | grader (`[grader].type`) | the agent must… | graded by |
-|---|---|---|---|
-| `fix`, `feature` | `hidden_tests` | fix a bug / add behaviour described like an issue | tests overlaid only at grading + existing suites (`strict_pass`); edited tests are reset first |
-| `build` | `command` | build, install or configure something | commands exit 0, artifacts exist with the right magic, tree left clean |
-| `test` | `mutation` | write tests for untested code | tests pass on the real code and kill ≥ `min_kill` of hand-written mutants |
-| `review` | `review_seeded` | review a change with planted defects | one-to-one matching of findings to seeds; recall, **precision**, F1; decoys (project idioms that look wrong) count as false alarms |
-| `review` (control) | `review_seeded` with no seeds | review a clean change | passes only with no blocker/major and ≤ N findings |
-| `review` | `review_replay` | review a real merged PR | location match against the human review threads; recall, precision |
-| `numeric` | `numeric` | make a numerical routine accurate | a hidden probe compares against a trusted reference (NumPy/SciPy/mpmath) with per-dtype rtol/atol, NaN/Inf positions, ULP distance |
-| `perf` | `perf` | make something faster without breaking it | correctness gate, then interleaved base-vs-candidate timing; pass if the bootstrap CI lower bound of the speedup ≥ target |
+```bash
+cd your-project
+repoevals init
+```
 
-Graders are plugins: a repository can add its own in `[repo].graders = ".agent-evals/graders"`, and packages can
-register them under the `repoevals.graders` entry-point group.
+This creates `repoevals.toml` and an example task in `.agent-evals/tasks/example_fix/`. Edit the config so it
+describes how your tests run:
 
-## What every run gets, for free
+```toml
+[repo]
+id = "your-project"
+tasks = ".agent-evals/tasks"
 
-- **History-free workspace.** `git archive` of the base commit, task files and config removed, one root commit,
-  reflog expired; a leak scan fails preparation if any other ref, remote, stash or history is present.
-  (Agents mining git history for the upstream fix inflated SWE-bench-family and Commit0 scores.)
-- **Integrity checks (LLM-free).** Skip/xfail markers, `GTEST_SKIP`, `DISABLED_` tests, or loosened tolerances added
-  to tests; deleted tests; edits to protected files (e.g. skip/deselect lists); `git log`/`fetch`/`reflog` history
-  mining; network access; reads of grader material. Reported on every grade, enforceable with `[integrity].gate`.
-- **Tamper-resistant grading.** Graders diff the tree against a copy of the history kept outside the workspace,
-  with a private index (skip-worktree, `info/exclude`, deleted `.git` change nothing); hidden files are written
-  through no agent-planted symlink; targets from answers are validated and shell-quoted; numeric candidates run in a
-  separate process from the comparison; timeouts kill whole process groups (and containers).
-- **Reproducible grading.** Grading snapshots the agent's tree and restores it afterwards; regrading gives the same
-  answer. Infrastructure failures are `status: error` (not graded), never counted as agent failures.
-- **Process metrics** from a vendor-neutral trace (`events.jsonl`, converters for Claude Code and Codex):
-  commands, failures, guidance files actually read, tokens, cost.
-- **Statistics that survive review.** pass@k (unbiased) and pass^k per task; macro pass rate with task-clustered
-  bootstrap CIs; paired comparison between arms on the same tasks with an exact sign-flip test.
-- **A/B arms for agent guidance.** `guidance:raw`, `guidance:none`, `guidance:file=<path>` — same tasks, same
-  grader, only the instructions differ.
-- **Harbor export (experimental).** `repoevals export harbor` writes Terminal-Bench/Harbor task directories
-  (task.toml, instruction, oracle solution, a verifier that calls `repoevals grade`); the environment image must still
-  be supplied per repository.
-- **Guidance lint.** `repoevals guidance-lint` reports paths named in `AGENTS.md` & co. that no longer exist.
+[policy]
+test_globs = ["tests/**"]
+library_globs = ["your_package/**"]
 
-## The self-check is the product
+[test]
+adapter = "pytest"
+build = "pip install -e . -q"
+```
 
-`repoevals check` runs in CI on every PR that touches tasks, without a model or a secret, so it is safe on forks:
+### 2. Write a task
 
-| probe | requirement |
+A task is a directory with a `task.toml`, the instruction the agent receives, and the material used to grade it.
+This bug-fix task re-introduces a bug with `setup.patch` and grades the fix with a test the agent never sees:
+
+```
+.agent-evals/tasks/fix_var_ddof/
+├── task.toml
+├── instruction.md          # the bug report, as a user would write it
+├── setup.patch             # applied before the agent starts; its reverse is the reference fix
+└── hidden/
+    └── tests/test_var_hidden.py
+```
+
+```toml
+# task.toml
+version = "1.0"
+
+[metadata]
+family = "fix"
+base = "HEAD"               # any git revision of your repository
+created = "2026-10-13"
+
+[grader]
+type = "hidden_tests"
+targets = ["tests/test_var_hidden.py"]
+regression_targets = ["tests/test_basic.py"]
+```
+
+### 3. Validate and self-check
+
+```bash
+repoevals validate           # static checks: schema, files, instruction hygiene
+repoevals check              # the untouched workspace must fail, the reference solution must pass
+```
+
+```
+OK       fix_var_ddof: null=fail oracle=['pass']
+```
+
+### 4. Run an agent and read the report
+
+```bash
+repoevals run --agent claude-code --repeats 5
+repoevals report runs/<timestamp>
+```
+
+A complete, runnable example repository with one task of each type is in
+[`examples/minisci`](examples/minisci).
+
+## Concepts
+
+| term | meaning |
 |---|---|
-| null agent (untouched workspace) | must **fail** — otherwise the task measures nothing |
-| reference solution, `--repeats N` | must **pass** every time — otherwise the task is broken or flaky |
-| reference tests vs mutants | must kill ≥ `oracle_min_kill` (default 100%) — otherwise the mutants are equivalent or invalid |
-| findings spam (one finding per changed line) | must **fail** a review gate — otherwise recall-only scoring is gameable |
+| **task** | One directory under your tasks folder: what the agent is asked to do and how the result is graded. |
+| **base** | The git revision the task starts from. Tasks can start from any commit in your history. |
+| **workspace** | A fresh copy of the repository at the base, with task files and git history removed. The agent works only here. |
+| **grader** | The deterministic check that turns the agent's final workspace and answer into a result. |
+| **reference solution** | A patch or set of files that solves the task. `repoevals check` uses it to prove the task is solvable. |
+| **arm** | A variant of the setup to compare, e.g. with and without your `AGENTS.md`. |
+| **run directory** | Everything about one attempt: the workspace, the instruction, the agent's trace and answer, and `grade.json`. |
 
-This follows the Agentic Benchmark Checklist (Zhu et al., 2025) and Terminal-Bench's task vetting: a task that the
-do-nothing agent passes, or that its own reference fails, is a bug in the benchmark.
+Each graded run has a status: `pass`, `fail`, `skipped` (the host lacks required hardware), `scored` (a metric
+without a pass/fail gate), or `error` (infrastructure problem, not counted against the agent).
 
-## Quick start (example repository)
+## Task types
+
+| family | grader | the agent is asked to | graded by |
+|---|---|---|---|
+| `fix`, `feature` | `hidden_tests` | fix a bug or add behaviour | hidden tests plus existing suites; modified tests are restored before grading |
+| `build` | `command` | build, install or configure | commands succeed, artifacts exist, optionally an unchanged tree |
+| `test` | `mutation` | write tests for existing code | tests pass on the real code and detect a minimum share of known faults |
+| `review` | `review_seeded` | review a change with known problems | recall and precision against known findings; decoys and clean changes catch false alarms |
+| `review` | `review_replay` | review a real past pull request | recall and precision against the human review comments |
+| `numeric` | `numeric` | make a numerical routine accurate | comparison with a trusted reference per dtype, including NaN/Inf handling and ULP error |
+| `perf` | `perf` | make code faster | correctness first, then a measured speedup with a confidence interval |
+
+You can add your own graders. See [Extending repoevals](docs/extending.md).
+
+## Running agents
 
 ```bash
-git clone https://github.com/vchamarthi/repoevals && cd repoevals
-python -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]'
-pytest -q                                          # unit + end-to-end tests on examples/minisci
+# Claude Code, three repeats per task
+repoevals run --agent claude-code --repeats 3
 
-cp -R examples/minisci /tmp/minisci && cd /tmp/minisci && git init -q && git add -A && git commit -qm init
-repoevals list
-repoevals check                                      # 6 tasks, all OK
-repoevals run --agent claude-code --repeats 3 fix_var_ddof review_seeded_softmax
-repoevals report runs/<stamp>
+# Codex, a specific model, only bug-fix tasks
+repoevals run --agent codex --model <model-id> family:fix
+
+# Any command-line agent; {prompt_file}, {workspace} and {model} are substituted
+repoevals run --agent "cmd:my-agent --prompt-file {prompt_file}"
+
+# Compare your agent guidance against none, on the same tasks
+repoevals run --agent claude-code --arm guidance:raw --arm guidance:none --repeats 8
+
+# Run the agent inside a container with no network access
+repoevals run --agent claude-code --docker ghcr.io/your-org/agent-image:latest
 ```
 
-Adopting in your repository: [docs/adopting.md](docs/adopting.md). Config reference: [docs/config.md](docs/config.md).
-Task format: [docs/task-spec.md](docs/task-spec.md).
+Without `--docker`, the agent runs as a local process with your user's permissions. Use a container for untrusted
+tasks or agents.
 
-## Scientific Python focus (Intel ecosystem first)
+Already have your own agent harness? Produce a run directory and call `repoevals grade <run_dir>`. See
+[Run directories](docs/extending.md#run-directories).
 
-The primary targets are numerical libraries where "the tests pass" is not the whole story: dtype matrices,
-tolerances, SYCL devices, upstream test suites run against a drop-in replacement, and patch/fallback behaviour.
-Starter configs live in [examples/intel/](examples/intel/) for **dpctl, dpnp, mkl_fft, mkl_random, mkl_umath,
-scikit-learn-intelex (sklearnex, daal4py, onedal), xgboost**, and **oneDAL** (a mapping of PR #3818's tasks).
-Highlights from the [ecosystem study](docs/research/04-scientific-adaptation.md):
+## Reading results
 
-- Everything except GPU-specific paths runs on free GitHub runners: a SYCL CPU device comes from Intel's OpenCL CPU
-  runtime, as dpctl/dpnp/xgboost CI already do. GPU tasks declare `requires = { devices = ["gpu"] }` and are
-  `skipped` (not failed) elsewhere.
-- Skip/deselect lists (`deselected_tests.yaml`, `skipped_tests*.tbl`) are both a free source of hidden tests (a fix
-  that removes entries comes with its own tests) and an attack surface, so configs mark them `protected_globs`.
-- The numeric grader should reuse each repo's own tolerance helpers (e.g. dpnp's `assert_dtype_allclose`) and pin the
-  reference library build, because NumPy builds can disagree (see dpnp#2914 review).
+`repoevals report <runs-dir>` writes three files:
 
-## Is this already done?
+| file | contents |
+|---|---|
+| `summary.md` | pass rate per configuration with 95% confidence intervals, paired comparisons, per-task pass@k, cost and tokens, runs with integrity flags |
+| `results.json` | the same numbers, machine-readable |
+| `results.jsonl` | one row per graded run, ready for pandas or a database |
 
-Pieces exist; the combination does not (survey of ~35 projects: [docs/research/03-prior-art-names.md](docs/research/03-prior-art-names.md)).
-[Harbor](https://github.com/harbor-framework/harbor) has the closest task format (we export to it),
-[SWE-bench](https://github.com/SWE-bench/SWE-bench)/[SWE-smith](https://github.com/SWE-bench/SWE-smith) the hidden-test
-pattern as fixed datasets, [Inspect](https://inspect.aisi.org.uk/) the strongest general eval runtime, and several
-2026 benchmarks cover review (ReviewBench, SWE-PRBench) or mutation-graded test writing (TestGenEval, SWT-bench,
-SWE Atlas). None is a dependency that a repository adds to keep its *own* agent tasks next to its code, with review
-precision/decoys/controls, mutation grading, guidance A/B arms, and an LLM-free CI self-check — and none targets
-scientific libraries. The oneDAL PR author's runner (`napetrov/agent-benchmark`, unpublished at the time of
-writing) is the closest relative; collaboration is preferable to divergence.
+Read the transcripts of flagged runs before relying on a number. See [Reports and statistics](docs/reports.md).
 
-## Standards followed
+## Continuous integration
 
-Summarized in [docs/standards.md](docs/standards.md), with sources in
-[docs/research/02-landscape.md](docs/research/02-landscape.md): Agentic Benchmark Checklist (task validity, outcome
-validity, reporting), Anthropic's *Demystifying evals for AI agents* (start from real failures, separate capability
-and regression suites, read transcripts), Miller 2024 error bars (clustered CIs, paired comparisons), tau-bench
-pass^k, contamination controls from SWE-rebench/SWE-bench-Live (task `created` dates, filter by model cutoff), and
-2026 findings on reward hacking (git-history mining, test tampering, ImpossibleBench-style canaries).
+Add the self-check to pull requests that change tasks or agent guidance:
 
-## Roadmap
+```yaml
+# .github/workflows/agent-evals.yml
+name: agent-evals
+on:
+  pull_request:
+    paths: [".agent-evals/**", "repoevals.toml", "**/AGENTS.md"]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: pip install -e .          # whatever makes your tests runnable
+      - uses: vchamarthi/repoevals@v0.1.0
+        with:
+          command: check
+```
 
-- **0.2** — task packs for mkl_umath, mkl_random, sklearnex (mined fixes listed in
-  [docs/research/04-scientific-adaptation.md](docs/research/04-scientific-adaptation.md)); `pytest` adapter: per-node
-  regression baseline and "skip count must not grow"; Docker isolation for graders; Inspect `.eval` log export.
-- **0.3** — `differential` grader (dpnp vs NumPy, sklearnex vs stock scikit-learn), `array_api_delta`, patching/
-  fallback-log grader for sklearnex, SYCL device probe recorded in every grade, python-only overlay builds.
-- **0.4** — executable review probes (reviewer reproducers as tests), ImpossibleBench-style canary tasks,
-  fresh-image regrading, Every-Eval-Ever export, eval cards.
-- Later — GPU lane on self-hosted Intel runners, free-threading (cp314t) task family, SWE-smith-style task synthesis.
+The self-check uses no model and no secrets. Agent runs need API keys and belong in a manually triggered or
+scheduled workflow. See [GitHub Action](docs/github-action.md).
 
-## License and credits
+## Documentation
 
-Apache-2.0. Design credit to the oneDAL agent-evals work in uxlfoundation/oneDAL#3818 (see [NOTICE](NOTICE)).
+| guide | |
+|---|---|
+| [Getting started](docs/getting-started.md) | adopt repoevals in an existing repository and write good first tasks |
+| [Configuration](docs/configuration.md) | every `repoevals.toml` option and test adapter |
+| [Tasks](docs/tasks.md) | task directory layout, `task.toml` fields and grader options |
+| [Command line](docs/cli.md) | all commands, options and exit codes |
+| [GitHub Action](docs/github-action.md) | inputs, outputs and workflow recipes |
+| [Grading and integrity](docs/grading.md) | workspace isolation, self-checks and cheating detection |
+| [Reports and statistics](docs/reports.md) | metrics, confidence intervals and comparisons |
+| [Extending repoevals](docs/extending.md) | custom graders, run directories, Harbor export |
+| [Starter configurations](examples/starter-configs) | configs for dpnp, dpctl, mkl_fft, mkl_random, mkl_umath, scikit-learn-intelex, xgboost and oneDAL |
+
+## Getting help
+
+- Questions and ideas: [GitHub Discussions](https://github.com/vchamarthi/repoevals/discussions)
+- Bugs and feature requests: [GitHub Issues](https://github.com/vchamarthi/repoevals/issues)
+- Security issues: see [SECURITY.md](SECURITY.md). Please do not open a public issue.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to set up a development environment and open a
+pull request. Maintainers follow [MAINTAINERS.md](MAINTAINERS.md). Everyone participating is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

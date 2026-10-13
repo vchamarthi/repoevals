@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "repoevals"
 version = "0.1.0"
-description = "Repo-agnostic, deterministic evaluations for AI coding agents: declare tasks in your repo, grade them without an LLM."
+description = "Repository-native evaluations for AI coding agents."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
@@ -18,11 +18,23 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: Software Development :: Testing",
   "Topic :: Scientific/Engineering",
+  "Operating System :: POSIX",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
 
 [project.optional-dependencies]
 numeric = ["numpy>=1.23"]
-dev = ["pytest>=7", "numpy>=1.23"]
+dev = ["pytest>=7", "numpy>=1.23", "ruff>=0.6", "build>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/vchamarthi/repoevals"
+Documentation = "https://github.com/vchamarthi/repoevals/tree/main/docs"
+Issues = "https://github.com/vchamarthi/repoevals/issues"
+Changelog = "https://github.com/vchamarthi/repoevals/blob/main/CHANGELOG.md"
 
 [project.scripts]
 repoevals = "repoevals.cli:main"
@@ -32,3 +44,11 @@ packages = ["src/repoevals"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]

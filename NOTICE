@@ -1,9 +1,8 @@
 repoevals
 Copyright 2026 repoevals contributors
 
-This product is licensed under the Apache License, Version 2.0.
+Licensed under the Apache License, Version 2.0.
 
-The task families, grading rules and CI self-check design are generalized from the agent-evaluation work in
-uxlfoundation/oneDAL pull request #3818 ("dev: agent-eval tasks and graders for oneDAL, with no-LLM CI"),
-Copyright contributors to the oneDAL project, licensed under the Apache License, Version 2.0.
-repoevals is an independent reimplementation; no oneDAL source files are included.
+Acknowledgement: the task families and the no-LLM task self-check are informed by the agent-evaluation work in
+uxlfoundation/oneDAL (Apache License, Version 2.0). repoevals is an independent implementation and includes no
+oneDAL source code.

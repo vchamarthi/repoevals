@@ -24,7 +24,10 @@ from . import __version__
 from .config import load_config
 from .task import discover, load_task
 
-INIT_TOML = """# repoevals configuration — see https://github.com/vchamarthi/repoevals/blob/main/docs/config.md
+TASKS_HELP = "task ids, id prefixes ending in *, family:<name> or tag:<name> (default: all tasks)"
+SOURCE_HELP = "repository with full history to snapshot task bases from (default: the config's repository)"
+
+INIT_TOML = """# repoevals configuration — see https://github.com/vchamarthi/repoevals/blob/main/docs/configuration.md
 [repo]
 id = "{name}"
 tasks = ".agent-evals/tasks"
@@ -97,7 +100,8 @@ def cmd_init(args) -> int:
 def cmd_list(args) -> int:
     cfg = _cfg(args)
     for t in _tasks(cfg, args.tasks):
-        print(f"{t.id:40s} {t.family:8s} {t.grader_type:14s} base={t.base[:12]} created={t.metadata.get('created', '-')}")
+        created = t.metadata.get("created", "-")
+        print(f"{t.id:40s} {t.family:8s} {t.grader_type:14s} base={t.base[:12]} created={created}")
     return 0
 
 
@@ -159,6 +163,12 @@ def cmd_run(args) -> int:
     cfg = _cfg(args)
     tasks = _tasks(cfg, args.tasks)
     out = Path(args.out or f"runs/{time.strftime('%Y%m%d-%H%M%S')}").resolve()
+    image = args.docker or ""
+    if image == "config":
+        image = str(cfg.environment.get("image", ""))
+        if not image:
+            print("--docker without an image needs [environment].image in repoevals.toml")
+            return 2
     src = _source(args, cfg)
     for t in tasks:
         for arm in args.arm or ["guidance:raw"]:
@@ -166,7 +176,8 @@ def cmd_run(args) -> int:
                 rd = out / t.id / arm.replace(":", "_").replace("/", "_").replace("=", "_") / f"r{rep}"
                 prepare(cfg, t, rd, src, arm)
                 res = run_agent(args.agent, rd, model=args.model or "",
-                                timeout=float(t.agent.get("timeout_sec", 3600)), docker=args.docker or "",
+                                timeout=float(t.agent.get("timeout_sec", 3600)), docker=image,
+                                network=str(cfg.environment.get("network", "none")),
                                 extra_args=args.agent_args or "")
                 record(rd, args.agent, args.model or "", res)
                 from .workspace import update_meta
@@ -225,62 +236,66 @@ def _step_summary_text(md: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser("repoevals", description="Deterministic evaluations for AI coding agents.")
+    ap = argparse.ArgumentParser("repoevals")
     ap.add_argument("--version", action="version", version=__version__)
     ap.add_argument("--config", help="path to repoevals.toml (default: search upward from cwd)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     _add = sub.add_parser
 
     def add_parser(name, **kw):  # every subcommand also accepts --config (after the subcommand name)
+        if kw.get("help"):
+            kw.setdefault("description", kw["help"][0].upper() + kw["help"][1:] + ".")
         sp = _add(name, **kw)
         sp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         return sp
     sub.add_parser = add_parser  # type: ignore[method-assign]
-    sub.add_parser("init").set_defaults(fn=cmd_init)
-    p = sub.add_parser("list")
-    p.add_argument("tasks", nargs="*")
+    sub.add_parser("init", help="create repoevals.toml and an example task").set_defaults(fn=cmd_init)
+    p = sub.add_parser("list", help="list tasks")
+    p.add_argument("tasks", nargs="*", help=TASKS_HELP)
     p.set_defaults(fn=cmd_list)
-    p = sub.add_parser("validate")
-    p.add_argument("tasks", nargs="*")
-    p.add_argument("--source", help="repo clone with history: also check patches apply at each base")
+    p = sub.add_parser("validate", help="static checks of task definitions")
+    p.add_argument("tasks", nargs="*", help=TASKS_HELP)
+    p.add_argument("--source", help="repository with history: also check that patches apply at each base")
     p.set_defaults(fn=cmd_validate)
-    p = sub.add_parser("check")
-    p.add_argument("tasks", nargs="*")
-    p.add_argument("--source", help="repo clone with history (default: the config's repo)")
+    p = sub.add_parser("check", help="prove every task is valid: null run fails, reference passes")
+    p.add_argument("tasks", nargs="*", help=TASKS_HELP)
+    p.add_argument("--source", help=SOURCE_HELP)
     p.add_argument("--repeats", type=int, default=1, help="oracle repeats (flakiness)")
     p.add_argument("--keep", help="keep run directories here")
     p.add_argument("--json", help="write results as JSON")
     p.set_defaults(fn=cmd_check)
-    p = sub.add_parser("prepare")
-    p.add_argument("task")
-    p.add_argument("run_dir")
-    p.add_argument("--arm", default="guidance:raw")
-    p.add_argument("--source")
+    p = sub.add_parser("prepare", help="create a workspace for one task")
+    p.add_argument("task", help="task id or task directory")
+    p.add_argument("run_dir", help="run directory to create")
+    p.add_argument("--arm", default="guidance:raw", help="guidance:raw | guidance:none | guidance:file=PATH")
+    p.add_argument("--source", help=SOURCE_HELP)
     p.set_defaults(fn=cmd_prepare)
-    p = sub.add_parser("grade")
-    p.add_argument("run_dir")
+    p = sub.add_parser("grade", help="grade a run directory")
+    p.add_argument("run_dir", help="run directory to grade (writes grade.json)")
     p.set_defaults(fn=cmd_grade)
-    p = sub.add_parser("run")
-    p.add_argument("tasks", nargs="*")
+    p = sub.add_parser("run", help="prepare, run an agent and grade, for tasks x arms x repeats")
+    p.add_argument("tasks", nargs="*", help=TASKS_HELP)
     p.add_argument("--agent", required=True, help="claude-code | codex | noop | cmd:<template>")
-    p.add_argument("--model")
+    p.add_argument("--model", help="model id passed to the agent CLI")
     p.add_argument("--arm", action="append", help="guidance:raw | guidance:none | guidance:file=PATH (repeatable)")
-    p.add_argument("--repeats", type=int, default=3)
-    p.add_argument("--docker", help="run the agent in this image with --network none")
+    p.add_argument("--repeats", type=int, default=3, help="attempts per task and arm (default: 3)")
+    p.add_argument("--docker", nargs="?", const="config", metavar="IMAGE",
+                   help="run the agent in a container (default image: [environment].image; network: "
+                        "[environment].network, default none)")
     p.add_argument("--agent-args", help="extra CLI args for the agent")
-    p.add_argument("--source")
-    p.add_argument("--out")
+    p.add_argument("--source", help=SOURCE_HELP)
+    p.add_argument("--out", help="output directory (default: runs/<timestamp>)")
     p.set_defaults(fn=cmd_run)
-    p = sub.add_parser("report")
-    p.add_argument("runs")
-    p.add_argument("--out")
+    p = sub.add_parser("report", help="aggregate graded runs into a report")
+    p.add_argument("runs", help="directory containing run directories (searched recursively)")
+    p.add_argument("--out", help="report directory (default: <runs>/report)")
     p.set_defaults(fn=cmd_report)
-    p = sub.add_parser("export")
+    p = sub.add_parser("export", help="export tasks to another format")
     p.add_argument("format", choices=["harbor"])
-    p.add_argument("tasks", nargs="*")
-    p.add_argument("--out", required=True)
+    p.add_argument("tasks", nargs="*", help=TASKS_HELP)
+    p.add_argument("--out", required=True, help="output directory")
     p.set_defaults(fn=cmd_export)
-    p = sub.add_parser("guidance-lint")
+    p = sub.add_parser("guidance-lint", help="check that paths named in agent guidance files exist")
     p.add_argument("--strict", action="store_true", help="exit 1 when a claim is missing")
     p.set_defaults(fn=cmd_guidance_lint)
     args = ap.parse_args(argv)

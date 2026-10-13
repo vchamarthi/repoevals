@@ -32,8 +32,13 @@ REQUIRED_FILES = {
     "mutation": [("mutants_dir", "mutants")],
     "numeric": [("probe", "probe.py")],
 }
-HINT_PATTERNS = [r"\bFIXED in\b", r"\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{12,40}\b", r"/pull/\d+", r"/commit/[0-9a-f]+",
-                 r"\bthe fix (is|was) to\b"]
+HINT_PATTERNS = [
+    r"\bFIXED in\b",
+    r"\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{12,40}\b",  # commit SHAs (hex with letters and digits)
+    r"/pull/\d+",
+    r"/commit/[0-9a-f]+",
+    r"\bthe fix (is|was) to\b",
+]
 
 
 def validate_task(t: Task, cfg: RepoConfig, source: Path | None = None) -> list[str]:
@@ -146,7 +151,8 @@ def check_task(t: Task, cfg: RepoConfig, source: Path, work: Path, repeats: int 
     return res
 
 
-def check_all(tasks: list[Task], cfg: RepoConfig, source: Path, repeats: int = 1, keep: Path | None = None) -> list[dict]:
+def check_all(tasks: list[Task], cfg: RepoConfig, source: Path, repeats: int = 1,
+              keep: Path | None = None) -> list[dict]:
     load_repo_graders(cfg.graders_dir)
     work = keep or Path(tempfile.mkdtemp(prefix="repoevals-check-"))
     out = []

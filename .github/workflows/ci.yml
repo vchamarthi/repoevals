@@ -9,14 +9,24 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install ruff
+      - run: ruff check src tests
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python: ["3.10", "3.12", "3.13"]
-        include:  # one macOS job: macOS runners are scarce for private repositories
+        python: ["3.10", "3.11", "3.12", "3.13"]
+        include:
           - os: macos-latest
             python: "3.13"
     steps:
@@ -28,12 +38,23 @@ jobs:
       - run: git config --global user.name ci && git config --global user.email ci@localhost
       - run: python -m pytest -q
 
-  action-self-test:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+
+  action:
     # the composite action against the bundled example repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Make the example a git repository
+      - name: Prepare the example repository
         run: |
           cp -R examples/minisci "$RUNNER_TEMP/minisci"
           cd "$RUNNER_TEMP/minisci"
@@ -42,7 +63,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install numpy pytest
-      - name: validate + check
+      - name: validate, check, guidance-lint
         working-directory: ${{ runner.temp }}/minisci
         run: |
           python -m pip install -q "$GITHUB_WORKSPACE"

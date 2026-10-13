@@ -1,4 +1,4 @@
-# Starter config for IntelPython/dpnp (copy to the repo root as repoevals.toml). Untested scaffold.
+# Starter config for IntelPython/dpnp (copy to the repo root as repoevals.toml).
 [repo]
 id = "dpnp"
 url = "https://github.com/IntelPython/dpnp"

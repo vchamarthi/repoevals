@@ -1,4 +1,4 @@
-# Starter config for uxlfoundation/scikit-learn-intelex (sklearnex + daal4py + onedal bindings). Untested scaffold.
+# Starter config for uxlfoundation/scikit-learn-intelex (sklearnex + daal4py + onedal bindings).
 [repo]
 id = "sklearnex"
 url = "https://github.com/uxlfoundation/scikit-learn-intelex"

@@ -1,4 +1,4 @@
-# Starter config for IntelPython/dpctl. Untested scaffold.
+# Starter config for IntelPython/dpctl.
 [repo]
 id = "dpctl"
 url = "https://github.com/IntelPython/dpctl"

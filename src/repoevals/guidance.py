@@ -1,4 +1,4 @@
-"""`repoevals guidance-lint`: do the agent instructions (AGENTS.md, CLAUDE.md, copilot instructions) still match the repo?
+"""`repoevals guidance-lint`: do agent instructions (AGENTS.md, CLAUDE.md, Copilot instructions) match the repo?
 
 Stale guidance is worse than none: an agent told to run a script that was deleted, or to edit a file that moved,
 wastes its budget. This check extracts every `backticked` token that looks like a repository path and reports the

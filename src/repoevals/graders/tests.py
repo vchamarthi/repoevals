@@ -20,11 +20,10 @@ Reference solution (`repoevals check`): oracle.patch, else the reverse of setup.
 """
 from __future__ import annotations
 
+import shlex
 import shutil
 import tempfile
 from pathlib import Path
-
-import shlex
 
 from ..config import TEST_INFRA_GLOBS
 from ..util import apply_patch, copytree_overlay, glob_match, last_json, run_shell, within

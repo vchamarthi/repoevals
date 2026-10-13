@@ -1,0 +1,22 @@
+# Starter config for uxlfoundation/oneDAL (copy to the repo root as repoevals.toml).
+[repo]
+id = "onedal"
+url = "https://github.com/uxlfoundation/oneDAL"
+tasks = "dev/agent_evals/tasks"
+hide = ["dev/agent_evals/**"]   # eval tooling kept next to the tasks
+
+[guidance]
+globs = ["**/AGENTS.md", ".github/instructions/*.md", ".github/copilot-instructions.md"]
+
+[policy]
+test_globs = ["**/test/**", "**/*_test.cpp", "**/tests/**"]
+library_globs = ["cpp/**"]
+
+[test]
+adapter = "bazel"
+command = "bazel test --nocache_test_results --test_output=errors {targets}"
+timeout_sec = 7200
+
+[environment]
+dockerfile = "dev/agent_evals/Dockerfile"
+network = "none"

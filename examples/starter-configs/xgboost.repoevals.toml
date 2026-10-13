@@ -1,4 +1,4 @@
-# Starter config for dmlc/xgboost (Intel CPU / SYCL plugin work). Untested scaffold.
+# Starter config for dmlc/xgboost (Intel CPU / SYCL plugin work).
 [repo]
 id = "xgboost"
 url = "https://github.com/dmlc/xgboost"

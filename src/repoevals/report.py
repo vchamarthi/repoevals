@@ -88,10 +88,12 @@ def to_markdown(s: dict) -> str:
                      f"{ci[0]}–{ci[1]} | {a.get('cost_usd', 0)} | {a.get('tokens', 0)} | {a.get('status')} |")
     if s["comparisons"]:
         lines += ["", "## Paired comparisons (b − a, same tasks)", "",
-                  "| a | b | tasks | Δ pass rate | 95% CI | p (sign-flip) | better / worse |", "|---|---|---|---|---|---|---|"]
+                  "| a | b | tasks | Δ pass rate | 95% CI | p (sign-flip) | better / worse |",
+                  "|---|---|---|---|---|---|---|"]
         for c in s["comparisons"]:
             if c.get("n_tasks"):
-                lines.append(f"| `{c['a']}` | `{c['b']}` | {c['n_tasks']} | {c['delta']:+} | {c['ci95'][0]}–{c['ci95'][1]} "
+                ci = f"{c['ci95'][0]}–{c['ci95'][1]}"
+                lines.append(f"| `{c['a']}` | `{c['b']}` | {c['n_tasks']} | {c['delta']:+} | {ci} "
                              f"| {c['p_value']} | {c['tasks_better']} / {c['tasks_worse']} |")
     for arm, a in sorted(s["arms"].items()):
         if not a.get("tasks"):
@@ -100,6 +102,10 @@ def to_markdown(s: dict) -> str:
                   "|---|---|---|---|---|---|"]
         for t, r in a["tasks"].items():
             lines.append(f"| {t} | {r['n']} | {r['pass']} | {r['pass@1']} | {r['pass@3']} | {r['pass^3']} |")
+    for arm, a in sorted(s["arms"].items()):
+        if a.get("scores"):
+            lines += ["", f"## Scores — `{arm}`", "", "| task:metric | mean |", "|---|---|"]
+            lines += [f"| {k} | {v} |" for k, v in a["scores"].items()]
     if s["integrity"]:
         lines += ["", "## Integrity flags (read these transcripts)", ""]
         lines += [f"- `{i['task']}` `{i['arm']}`: {', '.join(i['checks'])} — {i['run']}" for i in s["integrity"]]

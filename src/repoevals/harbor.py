@@ -97,8 +97,8 @@ def export_task(t: Task, cfg: RepoConfig, out: Path, workspace_meta: dict | None
                   "> /logs/agent/answer.txt"]
     (d / "solution" / "solve.sh").write_text("\n".join(solve) + "\n")
     shutil.copytree(t.dir, d / "tests" / "task")
-    cfg_file = next((cfg.root / n for n in ("repoevals.toml", ".agent-evals/repoevals.toml") if (cfg.root / n).exists()),
-                    None)
+    names = ("repoevals.toml", ".agent-evals/repoevals.toml")
+    cfg_file = next((cfg.root / n for n in names if (cfg.root / n).exists()), None)
     if cfg_file:
         shutil.copy2(cfg_file, d / "tests" / "repoevals.toml")
     import json
