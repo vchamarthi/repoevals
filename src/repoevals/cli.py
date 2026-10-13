@@ -1,16 +1,16 @@
-"""agentexam command line.
+"""repoevals command line.
 
-  agentexam init                         scaffold agentexam.toml + .agent-evals/tasks/ in the current repo
-  agentexam list                         list tasks
-  agentexam validate [--source DIR]      static checks of every task (CI gate, seconds)
-  agentexam check    [--source DIR]      null/oracle/probe self-check of graders (CI, no LLM, no secrets)
-  agentexam prepare TASK RUN_DIR         snapshot a workspace for one task (history-free)
-  agentexam grade RUN_DIR                grade a run directory, write grade.json
-  agentexam run --agent A [--arm ...] [--repeats N] [--model M] [--docker IMG] [TASK...]
+  repoevals init                         scaffold repoevals.toml + .agent-evals/tasks/ in the current repo
+  repoevals list                         list tasks
+  repoevals validate [--source DIR]      static checks of every task (CI gate, seconds)
+  repoevals check    [--source DIR]      null/oracle/probe self-check of graders (CI, no LLM, no secrets)
+  repoevals prepare TASK RUN_DIR         snapshot a workspace for one task (history-free)
+  repoevals grade RUN_DIR                grade a run directory, write grade.json
+  repoevals run --agent A [--arm ...] [--repeats N] [--model M] [--docker IMG] [TASK...]
                                        prepare + run agent + grade, for a matrix of tasks x arms x repeats
-  agentexam report RUNS_DIR [--out DIR]  aggregate grade.json files (CIs, paired arm deltas, pass@k, cost)
-  agentexam export harbor --out DIR      export tasks in Harbor format
-  agentexam guidance-lint                check paths named in AGENTS.md & co. exist
+  repoevals report RUNS_DIR [--out DIR]  aggregate grade.json files (CIs, paired arm deltas, pass@k, cost)
+  repoevals export harbor --out DIR      export tasks in Harbor format
+  repoevals guidance-lint                check paths named in AGENTS.md & co. exist
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from . import __version__
 from .config import load_config
 from .task import discover, load_task
 
-INIT_TOML = """# agentexam configuration — see https://github.com/vchamarthi/agentexam/blob/main/docs/config.md
+INIT_TOML = """# repoevals configuration — see https://github.com/vchamarthi/repoevals/blob/main/docs/config.md
 [repo]
 id = "{name}"
 tasks = ".agent-evals/tasks"
@@ -80,17 +80,17 @@ def _source(args, cfg) -> Path:
 
 def cmd_init(args) -> int:
     root = Path.cwd()
-    if (root / "agentexam.toml").exists():
-        print("agentexam.toml already exists")
+    if (root / "repoevals.toml").exists():
+        print("repoevals.toml already exists")
         return 1
-    (root / "agentexam.toml").write_text(INIT_TOML.replace("{name}", root.name))
+    (root / "repoevals.toml").write_text(INIT_TOML.replace("{name}", root.name))
     ex = root / ".agent-evals" / "tasks" / "example_fix"
     (ex / "hidden" / "tests").mkdir(parents=True, exist_ok=True)
     (ex / "task.toml").write_text(EXAMPLE_TASK.replace("{today}", time.strftime("%Y-%m-%d")))
     (ex / "instruction.md").write_text("Describe the bug as a user would report it. Do not hint at the fix.\n")
     (ex / "hidden" / "tests" / "test_example_hidden.py").write_text("def test_placeholder():\n    assert True\n")
-    print("created agentexam.toml and .agent-evals/tasks/example_fix — add setup.patch or oracle.patch, then run "
-          "`agentexam validate` and `agentexam check`")
+    print("created repoevals.toml and .agent-evals/tasks/example_fix — add setup.patch or oracle.patch, then run "
+          "`repoevals validate` and `repoevals check`")
     return 0
 
 
@@ -131,7 +131,7 @@ def cmd_check(args) -> int:
                                                            or f"null={r.get('null')} oracle={r.get('oracle')}"))
     if args.json:
         Path(args.json).write_text(json.dumps(res, indent=1))
-    _step_summary("agentexam check", res)
+    _step_summary("repoevals check", res)
     return 1 if bad else 0
 
 
@@ -173,7 +173,7 @@ def cmd_run(args) -> int:
                 update_meta(rd, repeat=rep)
                 g = grade_run(rd, cfg, t)
                 print(f"{t.id:36s} {arm:20s} r{rep} {g['status']:7s} {res.seconds:7.1f}s")
-    print(f"runs in {out}; `agentexam report {out}`")
+    print(f"runs in {out}; `repoevals report {out}`")
     return 0
 
 
@@ -225,9 +225,9 @@ def _step_summary_text(md: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser("agentexam", description="Deterministic evaluations for AI coding agents.")
+    ap = argparse.ArgumentParser("repoevals", description="Deterministic evaluations for AI coding agents.")
     ap.add_argument("--version", action="version", version=__version__)
-    ap.add_argument("--config", help="path to agentexam.toml (default: search upward from cwd)")
+    ap.add_argument("--config", help="path to repoevals.toml (default: search upward from cwd)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     _add = sub.add_parser
 

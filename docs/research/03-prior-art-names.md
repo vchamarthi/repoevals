@@ -1,7 +1,8 @@
 # 03 — Prior art and naming for a repo-agnostic agent-eval framework
 
-> **Outcome (2026-10-13):** the project first shipped as `heldout` (rank 1 below) and was then renamed to
-> **`agentexam`** for a more self-explanatory name — free on PyPI, npm and GitHub, with no exact-name collisions.
+> **Outcome (2026-10-13):** the project first shipped as `heldout` (rank 1 below), was briefly `agentexam`, and is
+> now **`repoevals`**: the most literal name (evals that live in your repo), free on PyPI and npm, with no
+> exact-name repositories on GitHub. Nearest name: the RepoEval benchmark (RepoCoder, 2023), a different thing.
 > The ranking below is kept as researched.
 
 Date: 2026-10-13. Scope: (1) is the generalized oneDAL PR #3818 idea already done? (2) names for the new project under GitHub `vchamarthi`.

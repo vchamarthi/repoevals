@@ -1,10 +1,10 @@
-"""Grade one run directory and write `grade.json` (schema agentexam.grade/v1).
+"""Grade one run directory and write `grade.json` (schema repoevals.grade/v1).
 
-    {"schema": "agentexam.grade/v1", "task": "...", "family": "...", "grader": "...", "arm": "...",
+    {"schema": "repoevals.grade/v1", "task": "...", "family": "...", "grader": "...", "arm": "...",
      "agent": "...", "model": "...", "status": "pass|fail|skipped|error", "pass": true|false|null,
      "metrics": {...numbers/bools...}, "details": {...}, "process": {...trace metrics...},
      "integrity": {"integrity_ok": bool, "integrity_findings": [...]}, "errors": [...],
-     "agentexam_version": "x.y.z", "graded_at": "..."}
+     "repoevals_version": "x.y.z", "graded_at": "..."}
 
 A grader exception is recorded as status "error" (not graded), never as a failure: infrastructure problems must not
 be counted against the agent. Regrading the same run directory gives the same result.
@@ -37,7 +37,7 @@ def context(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> GradeCo
     meta = json.loads((run_dir / "meta.json").read_text())
     task = task or load_task(Path(meta["task_dir"]))
     answer = run_dir / "answer.txt"
-    backup = run_dir / ".agentexam" / "start.git"
+    backup = run_dir / ".repoevals" / "start.git"
     return GradeContext(run_dir=run_dir, workspace=(run_dir / "workspace").resolve(), task=task, config=cfg,
                         start_sha=meta["start_sha"], answer=answer.read_text() if answer.exists() else "",
                         events=read_events(run_dir), gitdir=backup if backup.is_dir() else None)
@@ -46,10 +46,10 @@ def context(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> GradeCo
 def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
     load_repo_graders(cfg.graders_dir)
     meta = json.loads((run_dir / "meta.json").read_text())
-    out = {"schema": "agentexam.grade/v1", "task": meta.get("task"), "family": None, "grader": None,
+    out = {"schema": "repoevals.grade/v1", "task": meta.get("task"), "family": None, "grader": None,
            "arm": meta.get("arm"), "agent": meta.get("agent"), "model": meta.get("model"),
            "repeat": meta.get("repeat"), "status": "error", "pass": None, "metrics": {}, "details": {},
-           "process": {}, "integrity": {}, "errors": [], "agentexam_version": __version__,
+           "process": {}, "integrity": {}, "errors": [], "repoevals_version": __version__,
            "graded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     try:
         ctx = context(run_dir, cfg, task)

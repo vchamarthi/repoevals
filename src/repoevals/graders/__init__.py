@@ -3,13 +3,13 @@
 A grader is a function `grade(ctx: GradeContext) -> dict`. The dict holds metrics (numbers/bools), details
 (strings/lists/objects) and "pass": True / False / None (None = score-only, or not measurable here).
 An oracle is `oracle(ctx: GradeContext) -> str | None`: it puts the reference solution into ctx.workspace and/or
-returns the reference final answer; `agentexam check` uses it to prove every task is solvable and every grader
+returns the reference final answer; `repoevals check` uses it to prove every task is solvable and every grader
 accepts a correct solution.
 
 Graders come from three places, later ones overriding earlier ones:
   1. built-in modules in this package (each exports GRADERS and optionally ORACLES dicts)
-  2. installed packages exposing entry points in the "agentexam.graders" group (value: module with GRADERS/ORACLES)
-  3. repo-local *.py files in the directory named by `[repo].graders` in agentexam.toml
+  2. installed packages exposing entry points in the "repoevals.graders" group (value: module with GRADERS/ORACLES)
+  3. repo-local *.py files in the directory named by `[repo].graders` in repoevals.toml
 """
 from __future__ import annotations
 
@@ -93,21 +93,21 @@ def _load_builtin() -> None:
 def _load_entry_points() -> None:
     try:
         from importlib.metadata import entry_points
-        eps = entry_points(group="agentexam.graders")
+        eps = entry_points(group="repoevals.graders")
     except Exception:  # pragma: no cover
         return
     for ep in eps:
         try:
             _register(ep.load())
         except Exception as e:  # a broken plugin must not take the core down
-            print(f"agentexam: grader plugin {ep.name} failed to load: {e}")
+            print(f"repoevals: grader plugin {ep.name} failed to load: {e}")
 
 
 def load_repo_graders(directory: Path | None) -> None:
     if not directory or not directory.is_dir():
         return
     for f in sorted(directory.glob("*.py")):
-        spec = importlib.util.spec_from_file_location(f"agentexam_repo_graders.{f.stem}", f)
+        spec = importlib.util.spec_from_file_location(f"repoevals_repo_graders.{f.stem}", f)
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)

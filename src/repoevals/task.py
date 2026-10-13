@@ -1,7 +1,7 @@
 """Task definitions: one directory per task containing `task.toml` and `instruction.md`.
 
 The layout is a superset of the Harbor / Terminal-Bench task directory (task.toml + instruction.md), so tasks can be
-exported to Harbor with `agentexam export harbor`. Everything agentexam-specific lives under [grader] and [metadata].
+exported to Harbor with `repoevals export harbor`. Everything repoevals-specific lives under [grader] and [metadata].
 
     tasks/fix_kmeans_empty_reloc/
       task.toml            required
@@ -48,7 +48,7 @@ from pathlib import Path
 from .util import read_toml
 
 FAMILIES = {"build", "fix", "feature", "test", "review", "numeric", "perf", "port", "docs", "custom"}
-CANARY_PREFIX = "AGENTEXAM CANARY GUID"
+CANARY_PREFIX = "REPOEVALS CANARY GUID"
 
 
 @dataclass
@@ -162,7 +162,7 @@ def host_supports(task: Task) -> tuple[bool, str]:
         if vendors and vendor not in vendors:
             return False, f"CPU vendor {vendor or 'unknown'} not in {sorted(vendors)}"
     devices = set(req.get("devices", [])) - {"cpu"}
-    available = set(filter(None, os.environ.get("AGENTEXAM_DEVICES", "cpu").split(",")))
+    available = set(filter(None, os.environ.get("REPOEVALS_DEVICES", "cpu").split(",")))
     if devices - available:
-        return False, f"needs devices {sorted(devices - available)} (set AGENTEXAM_DEVICES)"
+        return False, f"needs devices {sorted(devices - available)} (set REPOEVALS_DEVICES)"
     return True, ""

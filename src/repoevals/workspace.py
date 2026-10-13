@@ -93,7 +93,7 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     if problems:
         raise RuntimeError(f"{task.id}: workspace leaks: {problems}")
     # pristine copy of the workspace history, outside the workspace: graders diff against it (util.WorkTree)
-    hd = run_dir / ".agentexam"
+    hd = run_dir / ".repoevals"
     if hd.exists():
         shutil.rmtree(hd)
     hd.mkdir()

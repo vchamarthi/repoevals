@@ -1,6 +1,6 @@
 """Aggregate grade.json files into a Markdown report and machine-readable results.
 
-    agentexam report runs/2026-10-13/ --out report/
+    repoevals report runs/2026-10-13/ --out report/
       report/summary.md        human-readable: per-arm pass rate with CIs, paired arm deltas, per-task table,
                                integrity flags, cost/tokens
       report/results.json      the same numbers, machine-readable
@@ -18,7 +18,7 @@ from .stats import cluster_bootstrap, paired_compare, pass_at_k, pass_hat_k
 def load_grades(root: Path) -> list[dict]:
     out = []
     for p in sorted(root.rglob("grade.json")):
-        # only grade.json written by agentexam next to its meta.json, never files inside a workspace
+        # only grade.json written by repoevals next to its meta.json, never files inside a workspace
         if not (p.parent / "meta.json").exists() or "workspace" in p.relative_to(root).parts[:-1]:
             continue
         try:
@@ -75,11 +75,11 @@ def summarize(grades: list[dict]) -> dict:
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             comparisons.append({"a": a, "b": b, **paired_compare(by_arm[a], by_arm[b])})
-    return {"schema": "agentexam.report/v1", "arms": arms, "comparisons": comparisons, "integrity": integrity}
+    return {"schema": "repoevals.report/v1", "arms": arms, "comparisons": comparisons, "integrity": integrity}
 
 
 def to_markdown(s: dict) -> str:
-    lines = ["# agentexam report", "", "## Arms (agent | model | arm)", "",
+    lines = ["# repoevals report", "", "## Arms (agent | model | arm)", "",
              "| arm | tasks | runs | pass rate | 95% CI (task-clustered) | cost $ | tokens | status |",
              "|---|---|---|---|---|---|---|---|"]
     for arm, a in sorted(s["arms"].items()):
@@ -116,7 +116,7 @@ def write_report(root: Path, out_dir: Path) -> dict:
     with open(out_dir / "results.jsonl", "w") as fh:
         for g in grades:
             rec = {k: g.get(k) for k in ("task", "family", "grader", "agent", "model", "arm", "repeat", "status",
-                                         "pass", "created", "agentexam_version")}
+                                         "pass", "created", "repoevals_version")}
             rec.update({f"m_{k}": v for k, v in (g.get("metrics") or {}).items()})
             rec.update({f"p_{k}": v for k, v in (g.get("process") or {}).items() if not isinstance(v, list)})
             rec["integrity_ok"] = (g.get("integrity") or {}).get("integrity_ok")

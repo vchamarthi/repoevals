@@ -1,4 +1,4 @@
-name: agentexam
+name: repoevals
 description: Validate, self-check, run and report deterministic AI-coding-agent evals defined in your repository.
 author: vchamarthi
 branding:
@@ -16,7 +16,7 @@ inputs:
     description: "check: only tasks whose directory changed relative to the PR base (falls back to all)"
     default: "true"
   config:
-    description: Path to agentexam.toml (default: search from the repository root)
+    description: Path to repoevals.toml (default: search from the repository root)
     default: ""
   repeats:
     description: "check: oracle repeats (flakiness). run: repeats per task and arm."
@@ -32,12 +32,12 @@ inputs:
     default: "guidance:raw"
   runs-dir:
     description: "run/report: directory for run outputs"
-    default: agentexam-runs
+    default: repoevals-runs
   python-version:
-    description: Python used to run agentexam itself
+    description: Python used to run repoevals itself
     default: "3.12"
-  agentexam-version:
-    description: "pip requirement for agentexam (default: this action's checkout)"
+  repoevals-version:
+    description: "pip requirement for repoevals (default: this action's checkout)"
     default: ""
 
 outputs:
@@ -51,51 +51,51 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-    - name: Install agentexam
+    - name: Install repoevals
       shell: bash
       run: |
-        if [ -n "${{ inputs.agentexam-version }}" ]; then
-          python -m pip install -q "${{ inputs.agentexam-version }}"
+        if [ -n "${{ inputs.repoevals-version }}" ]; then
+          python -m pip install -q "${{ inputs.repoevals-version }}"
         else
           python -m pip install -q "${{ github.action_path }}"
         fi
-    - name: agentexam ${{ inputs.command }}
+    - name: repoevals ${{ inputs.command }}
       id: main
       shell: bash
       env:
-        AE_CMD: ${{ inputs.command }}
-        AE_TASKS: ${{ inputs.tasks }}
-        AE_CHANGED: ${{ inputs.changed-only }}
-        AE_CONFIG: ${{ inputs.config }}
-        AE_REPEATS: ${{ inputs.repeats }}
-        AE_AGENT: ${{ inputs.agent }}
-        AE_MODEL: ${{ inputs.model }}
-        AE_ARMS: ${{ inputs.arms }}
-        AE_RUNS: ${{ inputs.runs-dir }}
-        AE_BASE: ${{ github.event.pull_request.base.sha }}
+        RE_CMD: ${{ inputs.command }}
+        RE_TASKS: ${{ inputs.tasks }}
+        RE_CHANGED: ${{ inputs.changed-only }}
+        RE_CONFIG: ${{ inputs.config }}
+        RE_REPEATS: ${{ inputs.repeats }}
+        RE_AGENT: ${{ inputs.agent }}
+        RE_MODEL: ${{ inputs.model }}
+        RE_ARMS: ${{ inputs.arms }}
+        RE_RUNS: ${{ inputs.runs-dir }}
+        RE_BASE: ${{ github.event.pull_request.base.sha }}
       run: |
         set -euo pipefail
         cfg=()
-        [ -n "$AE_CONFIG" ] && cfg=(--config "$AE_CONFIG")
-        tasks=($AE_TASKS)
-        if [ "$AE_CMD" = "check" ] && [ "$AE_CHANGED" = "true" ] && [ -n "$AE_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
-          tdir=$(python -c "from agentexam.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
-          git fetch -q --depth=1 origin "$AE_BASE" || true
-          mapfile -t tasks < <(git diff --name-only "$AE_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
+        [ -n "$RE_CONFIG" ] && cfg=(--config "$RE_CONFIG")
+        tasks=($RE_TASKS)
+        if [ "$RE_CMD" = "check" ] && [ "$RE_CHANGED" = "true" ] && [ -n "$RE_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
+          tdir=$(python -c "from repoevals.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
+          git fetch -q --depth=1 origin "$RE_BASE" || true
+          mapfile -t tasks < <(git diff --name-only "$RE_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
           echo "changed tasks: ${tasks[*]:-<none, checking all>}"
         fi
-        case "$AE_CMD" in
-          validate)      agentexam "${cfg[@]}" validate "${tasks[@]}" ;;
-          check)         agentexam "${cfg[@]}" check --repeats "$AE_REPEATS" --json agentexam-check.json "${tasks[@]}" ;;
-          guidance-lint) agentexam "${cfg[@]}" guidance-lint ;;
+        case "$RE_CMD" in
+          validate)      repoevals "${cfg[@]}" validate "${tasks[@]}" ;;
+          check)         repoevals "${cfg[@]}" check --repeats "$RE_REPEATS" --json repoevals-check.json "${tasks[@]}" ;;
+          guidance-lint) repoevals "${cfg[@]}" guidance-lint ;;
           run)
-            arms=(); for a in $AE_ARMS; do arms+=(--arm "$a"); done
-            model=(); [ -n "$AE_MODEL" ] && model=(--model "$AE_MODEL")
-            agentexam "${cfg[@]}" run --agent "$AE_AGENT" "${model[@]}" "${arms[@]}" --repeats "$AE_REPEATS" --out "$AE_RUNS" "${tasks[@]}"
-            agentexam report "$AE_RUNS" --out "$AE_RUNS/report"
-            echo "report=$AE_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
+            arms=(); for a in $RE_ARMS; do arms+=(--arm "$a"); done
+            model=(); [ -n "$RE_MODEL" ] && model=(--model "$RE_MODEL")
+            repoevals "${cfg[@]}" run --agent "$RE_AGENT" "${model[@]}" "${arms[@]}" --repeats "$RE_REPEATS" --out "$RE_RUNS" "${tasks[@]}"
+            repoevals report "$RE_RUNS" --out "$RE_RUNS/report"
+            echo "report=$RE_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
           report)
-            agentexam report "$AE_RUNS" --out "$AE_RUNS/report"
-            echo "report=$AE_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
-          *) echo "unknown command $AE_CMD"; exit 2 ;;
+            repoevals report "$RE_RUNS" --out "$RE_RUNS/report"
+            echo "report=$RE_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
+          *) echo "unknown command $RE_CMD"; exit 2 ;;
         esac

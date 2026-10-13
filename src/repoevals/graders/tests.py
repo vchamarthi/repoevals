@@ -16,7 +16,7 @@ Grading order:
   4. build once, run targets, then regression targets;
   5. restore the tree to exactly what the agent left (regrading is reproducible).
 
-Reference solution (`agentexam check`): oracle.patch, else the reverse of setup.patch.
+Reference solution (`repoevals check`): oracle.patch, else the reverse of setup.patch.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class TreeGuard:
 
     def __init__(self, ws: Path):
         self.ws = Path(ws).resolve()  # a symlinked workspace (e.g. Harbor's /workspace) is restored in place
-        self.tmp = Path(tempfile.mkdtemp(prefix="agentexam-tree-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="repoevals-tree-"))
         shutil.copytree(ws, self.tmp / "t", symlinks=True)
 
     def restore(self) -> None:

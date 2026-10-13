@@ -78,13 +78,13 @@ def git_init_snapshot(ws: Path, message: str) -> str:
     """Commit everything in ws as a single root commit; return its sha."""
     git(ws, "init", "-q", "-b", "main", check=True)
     git(ws, "add", "-A", "-f", check=True)
-    env_args = ["-c", "user.name=agentexam", "-c", "user.email=agentexam@localhost", "-c", "commit.gpgsign=false"]
+    env_args = ["-c", "user.name=repoevals", "-c", "user.email=repoevals@localhost", "-c", "commit.gpgsign=false"]
     git(ws, *env_args, "commit", "-q", "--no-verify", "--allow-empty", "-m", message, check=True)
     return git(ws, "rev-parse", "HEAD", check=True).out.strip()
 
 
 def git_commit(ws: Path, message: str) -> str:
-    env_args = ["-c", "user.name=agentexam", "-c", "user.email=agentexam@localhost", "-c", "commit.gpgsign=false"]
+    env_args = ["-c", "user.name=repoevals", "-c", "user.email=repoevals@localhost", "-c", "commit.gpgsign=false"]
     git(ws, "add", "-A", "-f", check=True)
     git(ws, *env_args, "commit", "-q", "--no-verify", "--allow-empty", "-m", message, check=True)
     return git(ws, "rev-parse", "HEAD", check=True).out.strip()
@@ -114,7 +114,7 @@ class WorkTree:
         self.ws = Path(ws).resolve()
         self.gitdir = Path(gitdir).resolve() if gitdir else self.ws / ".git"
         self.force_globs = list(force_globs)
-        self._tmp = tempfile.mkdtemp(prefix="agentexam-index-")
+        self._tmp = tempfile.mkdtemp(prefix="repoevals-index-")
         self.index = str(Path(self._tmp) / "index")
 
     def __del__(self):

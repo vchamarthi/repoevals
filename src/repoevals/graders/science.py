@@ -1,7 +1,7 @@
 """Graders for scientific libraries: numerical accuracy against a trusted reference, and performance.
 
 type = "numeric"
-    probe = "probe.py"                 # in the task dir (see agentexam/data/numeric_runner.py for the contract)
+    probe = "probe.py"                 # in the task dir (see repoevals/data/numeric_runner.py for the contract)
     python = "python"                  # interpreter of the repository's environment
     tolerances = { float32 = [1e-5, 1e-6], float64 = [1e-12, 1e-14] }   # [rtol, atol] per dtype
     min_case_pass = 1.0                # fraction of cases that must be within tolerance
@@ -138,7 +138,7 @@ def g_perf(ctx: GradeContext) -> dict:
     g, ws = ctx.g, ctx.workspace
     out: dict = {}
     guard = TreeGuard(ws)
-    base_dir = Path(tempfile.mkdtemp(prefix="agentexam-base-"))
+    base_dir = Path(tempfile.mkdtemp(prefix="repoevals-base-"))
     try:
         if not _correctness(ctx, out):
             out["pass"] = False

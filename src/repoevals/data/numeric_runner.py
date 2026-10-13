@@ -29,7 +29,7 @@ DEFAULT_TOL = {"float16": (1e-3, 1e-3), "float32": (1e-5, 1e-6), "float64": (1e-
 
 
 def load_probe(path):
-    spec = importlib.util.spec_from_file_location("agentexam_probe", path)
+    spec = importlib.util.spec_from_file_location("repoevals_probe", path)
     probe = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(probe)
     return probe

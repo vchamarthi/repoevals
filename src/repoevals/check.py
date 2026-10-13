@@ -1,4 +1,4 @@
-"""`agentexam validate` (static, seconds) and `agentexam check` (executes graders, no LLM, no secrets).
+"""`repoevals validate` (static, seconds) and `repoevals check` (executes graders, no LLM, no secrets).
 
 validate — for every task: schema, known family/grader, referenced files exist, gate syntax, metadata needed for
 contamination control (created date, source), instruction hygiene (no fix hints such as "FIXED in #123",
@@ -148,7 +148,7 @@ def check_task(t: Task, cfg: RepoConfig, source: Path, work: Path, repeats: int 
 
 def check_all(tasks: list[Task], cfg: RepoConfig, source: Path, repeats: int = 1, keep: Path | None = None) -> list[dict]:
     load_repo_graders(cfg.graders_dir)
-    work = keep or Path(tempfile.mkdtemp(prefix="agentexam-check-"))
+    work = keep or Path(tempfile.mkdtemp(prefix="repoevals-check-"))
     out = []
     try:
         for t in tasks:

@@ -1,6 +1,6 @@
 # Starter configs for Intel scientific libraries
 
-Copy `<repo>.agentexam.toml` to the target repository root as `agentexam.toml`, then add tasks under
+Copy `<repo>.repoevals.toml` to the target repository root as `repoevals.toml`, then add tasks under
 `.agent-evals/tasks/`. These configs encode what the [ecosystem study](../../docs/research/04-scientific-adaptation.md)
 found about each repository's build, tests and agent guidance. **They are scaffolds: none has been run against
 the real repository yet.**

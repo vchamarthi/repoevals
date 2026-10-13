@@ -1,6 +1,6 @@
-# agentexam.toml reference
+# repoevals.toml reference
 
-Looked up from the current directory upwards: `agentexam.toml`, then `.agent-evals/agentexam.toml`.
+Looked up from the current directory upwards: `repoevals.toml`, then `.agent-evals/repoevals.toml`.
 
 ```toml
 [repo]
@@ -52,4 +52,4 @@ answer.
 
 | variable | meaning |
 |---|---|
-| `AGENTEXAM_DEVICES` | comma-separated devices present on this host (default `cpu`), matched against `requires.devices` |
+| `REPOEVALS_DEVICES` | comma-separated devices present on this host (default `cpu`), matched against `requires.devices` |
