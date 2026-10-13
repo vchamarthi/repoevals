@@ -32,21 +32,33 @@ class Proc:
 
 def run(cmd: str | Sequence[str], cwd: Path | str | None = None, timeout: float | None = None,
         env: Mapping[str, str] | None = None, stdin: str | None = None) -> Proc:
-    """Run a command, merging stderr into stdout. A string is split with shlex (no shell)."""
+    """Run a command, merging stderr into stdout. A string is split with shlex (no shell).
+
+    The command gets its own process group; on timeout the whole group is killed, so background processes an agent
+    or a test suite started cannot keep running (and editing the workspace) after the deadline.
+    """
+    import signal
     import time
 
     argv = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
     full_env = {**os.environ, **(env or {})}
     t0 = time.monotonic()
     try:
-        p = subprocess.run(argv, cwd=cwd, env=full_env, input=stdin, text=True, capture_output=True,
-                           timeout=timeout)
-        return Proc(p.returncode, (p.stdout or "") + (p.stderr or ""), seconds=time.monotonic() - t0)
-    except subprocess.TimeoutExpired as e:
-        out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-        return Proc(-1, out, timed_out=True, seconds=time.monotonic() - t0)
+        proc = subprocess.Popen(argv, cwd=cwd, env=full_env, text=True, stdin=subprocess.PIPE if stdin is not None
+                                else subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                start_new_session=True, errors="replace")
     except FileNotFoundError as e:
         return Proc(127, str(e), seconds=time.monotonic() - t0)
+    try:
+        out, _ = proc.communicate(input=stdin, timeout=timeout)
+        return Proc(proc.returncode, out or "", seconds=time.monotonic() - t0)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        out, _ = proc.communicate()
+        return Proc(-1, out or "", timed_out=True, seconds=time.monotonic() - t0)
 
 
 def run_shell(cmd: str, cwd: Path | str | None = None, timeout: float | None = None,
@@ -87,52 +99,103 @@ def apply_patch(ws: Path, patch: Path, reverse: bool = False, check_only: bool =
     return git(ws, *args, str(patch.resolve()))
 
 
-def changed_files(ws: Path, base: str) -> dict[str, str]:
-    """Files that differ between `base` and the working tree (tracked or not): {path: status letter}."""
-    git(ws, "add", "-A", "-N")  # intent-to-add so untracked files show up in diff
-    out = git(ws, "diff", "--name-status", "--no-renames", base).out
-    res: dict[str, str] = {}
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) >= 2:
-            res[parts[-1]] = parts[0][0]
-    return res
+class WorkTree:
+    """Grade-time view of an agent's tree.
 
+    Compares the files on disk with a commit through a private git dir (the copy `prepare` saved outside the
+    workspace, when available) and a throwaway index. Nothing the agent did to `.git` — skip-worktree or
+    assume-unchanged flags, `info/exclude`, rewritten or deleted history — changes what the grader sees.
+    Ignored-but-present files are included when they match `force_globs` (tests, test infrastructure), so a
+    `.gitignore` entry cannot hide a new conftest.py either.
+    """
 
-def diff_text(ws: Path, base: str, paths: Iterable[str] | None = None) -> str:
-    git(ws, "add", "-A", "-N")
-    args = ["diff", "--no-renames", "--no-color", base]
-    if paths is not None:
-        args += ["--", *paths]
-    return git(ws, *args).out
+    def __init__(self, ws: Path, gitdir: Path | None = None, force_globs: Iterable[str] = ()):
+        import tempfile
+        self.ws = Path(ws).resolve()
+        self.gitdir = Path(gitdir).resolve() if gitdir else self.ws / ".git"
+        self.force_globs = list(force_globs)
+        self._tmp = tempfile.mkdtemp(prefix="heldout-index-")
+        self.index = str(Path(self._tmp) / "index")
 
+    def __del__(self):
+        shutil.rmtree(getattr(self, "_tmp", ""), ignore_errors=True)
 
-def diff_stats(ws: Path, base: str) -> tuple[int, int]:
-    """(lines added, lines removed) against base, new files included."""
-    git(ws, "add", "-A", "-N")
-    added = removed = 0
-    for line in git(ws, "diff", "--numstat", "--no-renames", base).out.splitlines():
-        a, r, *_ = line.split("\t") + ["", ""]
-        if a.isdigit():
-            added += int(a)
-        if r.isdigit():
-            removed += int(r)
-    return added, removed
+    def git(self, *args: str, check: bool = False) -> Proc:
+        p = run(["git", "-c", "core.quotepath=off", "-c", "advice.detachedHead=false", "-c", "core.bare=false",
+                 f"--git-dir={self.gitdir}", f"--work-tree={self.ws}", *args], cwd=self.ws,
+                env={"GIT_INDEX_FILE": self.index})
+        if check and p.rc != 0:
+            raise RuntimeError(f"git {' '.join(args)} failed in {self.ws}: {p.out.strip()[:2000]}")
+        return p
 
+    def stage(self, base: str) -> None:
+        self.git("read-tree", base, check=True)
+        self.git("add", "-A", "--", ".")
+        if self.force_globs:
+            ignored = self.git("ls-files", "--others", "--ignored", "--exclude-standard").out.splitlines()
+            forced = [p for p in ignored if glob_match(p, self.force_globs)]
+            for i in range(0, len(forced), 200):
+                self.git("add", "-f", "--", *forced[i:i + 200])
 
-def restore_paths(ws: Path, base: str, paths: Iterable[str]) -> list[str]:
-    """Reset each path to its content at base (deleting it if it did not exist there). Returns restored paths."""
-    restored = []
-    for p in paths:
-        exists = git(ws, "cat-file", "-e", f"{base}:{p}").rc == 0
-        if exists:
-            git(ws, "checkout", base, "--", p, check=True)
-        else:
-            target = ws / p
-            if target.is_file() or target.is_symlink():
+    def changed(self, base: str) -> dict[str, str]:
+        """{path: status letter (A/M/D/T)} between base and the files on disk."""
+        self.stage(base)
+        res: dict[str, str] = {}
+        for line in self.git("diff", "--cached", "--name-status", "--no-renames", base).out.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                res[parts[-1]] = parts[0][0]
+        return res
+
+    def diff_text(self, base: str, paths: Iterable[str] | None = None) -> str:
+        self.stage(base)
+        args = ["diff", "--cached", "--no-renames", "--no-color", base]
+        if paths is not None:
+            args += ["--", *paths]
+        return self.git(*args).out
+
+    def diff_stats(self, base: str) -> tuple[int, int]:
+        """(lines added, lines removed) against base, new files included."""
+        self.stage(base)
+        added = removed = 0
+        for line in self.git("diff", "--cached", "--numstat", "--no-renames", base).out.splitlines():
+            a, r, *_ = line.split("\t") + ["", ""]
+            added += int(a) if a.isdigit() else 0
+            removed += int(r) if r.isdigit() else 0
+        return added, removed
+
+    def restore(self, base: str, paths: Iterable[str]) -> list[str]:
+        """Reset each path to its content at base (deleting it if it did not exist there)."""
+        restored = []
+        for p in paths:
+            target = self.ws / p
+            if target.is_symlink():
                 target.unlink()
-        restored.append(p)
-    return restored
+            if self.git("cat-file", "-e", f"{base}:{p}").rc == 0:
+                self.git("checkout", base, "--", p, check=True)
+            elif target.is_file():
+                target.unlink()
+            restored.append(p)
+        return restored
+
+    def show(self, *args: str) -> str:
+        return self.git("show", *args).out
+
+
+def changed_files(ws: Path, base: str, gitdir: Path | None = None) -> dict[str, str]:
+    return WorkTree(ws, gitdir).changed(base)
+
+
+def diff_text(ws: Path, base: str, paths: Iterable[str] | None = None, gitdir: Path | None = None) -> str:
+    return WorkTree(ws, gitdir).diff_text(base, paths)
+
+
+def diff_stats(ws: Path, base: str, gitdir: Path | None = None) -> tuple[int, int]:
+    return WorkTree(ws, gitdir).diff_stats(base)
+
+
+def restore_paths(ws: Path, base: str, paths: Iterable[str], gitdir: Path | None = None) -> list[str]:
+    return WorkTree(ws, gitdir).restore(base, paths)
 
 
 @lru_cache(maxsize=512)
@@ -186,15 +249,31 @@ def last_json(text: str):
 
 
 def copytree_overlay(src: Path, dst: Path) -> list[str]:
-    """Copy every file under src onto dst (overwriting); returns the relative paths written."""
+    """Copy every file under src onto dst (overwriting); returns the relative paths written.
+
+    Existing symlinks at a target are replaced, and a target whose parent resolves outside dst is refused, so an
+    agent cannot pre-plant links that redirect hidden material out of the workspace.
+    """
     written = []
+    root = dst.resolve()
     for f in sorted(src.rglob("*")):
         if f.is_file():
             rel = f.relative_to(src).as_posix()
             if rel.endswith(".oracle"):  # stored with a suffix so the repo's own tooling ignores it
                 rel = rel[: -len(".oracle")]
             target = dst / rel
+            for parent in reversed(target.relative_to(dst).parents):
+                d = dst / parent
+                if d.is_symlink():
+                    d.unlink()
             target.parent.mkdir(parents=True, exist_ok=True)
+            if not within(root, target.parent):
+                raise RuntimeError(f"refusing to write {rel}: its directory resolves outside the workspace")
+            if target.is_symlink() or target.exists():
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
             shutil.copy2(f, target)
             written.append(rel)
     return written

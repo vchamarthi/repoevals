@@ -229,6 +229,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--version", action="version", version=__version__)
     ap.add_argument("--config", help="path to heldout.toml (default: search upward from cwd)")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    _add = sub.add_parser
+
+    def add_parser(name, **kw):  # every subcommand also accepts --config (after the subcommand name)
+        sp = _add(name, **kw)
+        sp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        return sp
+    sub.add_parser = add_parser  # type: ignore[method-assign]
     sub.add_parser("init").set_defaults(fn=cmd_init)
     p = sub.add_parser("list")
     p.add_argument("tasks", nargs="*")

@@ -24,15 +24,18 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from ..util import apply_patch, changed_files, copytree_overlay, diff_stats, git, glob_match, restore_paths, run_shell
-from . import GradeContext
+import shlex
+
+from ..config import TEST_INFRA_GLOBS
+from ..util import apply_patch, copytree_overlay, glob_match, last_json, run_shell, within
+from . import GradeContext, evaluate_gate
 
 
 class TreeGuard:
     """Snapshot of the agent's final tree; restores it after grading mutated the workspace."""
 
     def __init__(self, ws: Path):
-        self.ws = ws
+        self.ws = Path(ws).resolve()  # a symlinked workspace (e.g. Harbor's /workspace) is restored in place
         self.tmp = Path(tempfile.mkdtemp(prefix="heldout-tree-"))
         shutil.copytree(ws, self.tmp / "t", symlinks=True)
 
@@ -43,8 +46,9 @@ class TreeGuard:
 
 
 def changed_summary(ctx: GradeContext) -> dict:
-    ch = changed_files(ctx.workspace, ctx.start_sha)
-    added, removed = diff_stats(ctx.workspace, ctx.start_sha)
+    tree = ctx.tree()
+    ch = tree.changed(ctx.start_sha)
+    added, removed = tree.diff_stats(ctx.start_sha)
     tests = sorted(p for p in ch if glob_match(p, ctx.config.test_globs))
     return {"changed": ch, "files_changed": len(ch), "diff_lines": added + removed, "diff_added": added,
             "diff_removed": removed, "touched_tests": tests,
@@ -52,37 +56,41 @@ def changed_summary(ctx: GradeContext) -> dict:
 
 
 def formatter_ok(ctx: GradeContext, files: list[str]) -> bool | None:
+    """Run the repo formatter (inside a TreeGuard: auto-fixing formatters must not alter the agent's tree)."""
     if not ctx.config.formatter or not files:
         return None
     existing = [f for f in files if (ctx.workspace / f).is_file()]
     if not existing:
         return None
-    return run_shell(ctx.config.formatter.replace("{files}", " ".join(existing)), cwd=ctx.workspace,
-                     timeout=600).ok
+    return run_shell(ctx.config.formatter.replace("{files}", " ".join(map(shlex.quote, existing))),
+                     cwd=ctx.workspace, timeout=600).ok
 
 
 def g_hidden_tests(ctx: GradeContext) -> dict:
     g, ws = ctx.g, ctx.workspace
     summary = changed_summary(ctx)
     ch = summary.pop("changed")
-    out: dict = {**summary, "format_ok": formatter_ok(ctx, sorted(p for p, s in ch.items() if s != "D"))}
+    out: dict = dict(summary)
     if g.get("root_cause_files"):
         out["root_cause_touched"] = any(p in ch for p in g["root_cause_files"])
     if g.get("max_diff_lines"):
         out["diff_ok"] = out["diff_lines"] <= int(g["max_diff_lines"])
     guard = TreeGuard(ws)
     try:
+        out["format_ok"] = formatter_ok(ctx, sorted(p for p, s in ch.items() if s != "D"))
         protected = list(ctx.config.protected_globs) + list(g.get("protected", []))
         reset = [p for p in ch if glob_match(p, protected)]
         if not g.get("allow_test_edits", False):
-            reset += [p for p, s in ch.items() if s in ("M", "D") and glob_match(p, ctx.config.test_globs)]
-        out["reset_before_grading"] = sorted(set(restore_paths(ws, ctx.start_sha, sorted(set(reset)))))
+            reset += [p for p, s in ch.items() if s in ("M", "D", "T") and glob_match(p, ctx.config.test_globs)]
+            reset += [p for p in ch if glob_match(p, TEST_INFRA_GLOBS)]
+        out["reset_before_grading"] = sorted(set(ctx.tree().restore(ctx.start_sha, sorted(set(reset)))))
         hidden = ctx.task.dir / g.get("hidden_dir", "hidden")
         out["hidden_files"] = copytree_overlay(hidden, ws) if hidden.is_dir() else []
         adapter = ctx.adapter()
         res = adapter.run(ws, list(g.get("targets", [])), timeout=ctx.task.verifier.get("timeout_sec"))
         out["tests"] = res.summary()
-        out["hidden_pass"] = res.ok
+        # hidden tests must actually run: skipped hidden tests are not passes
+        out["hidden_pass"] = res.ok and (res.skipped == 0 or bool(g.get("allow_hidden_skips", False)))
         if g.get("regression_targets"):
             reg = adapter.run(ws, list(g["regression_targets"]), build=False,
                               timeout=ctx.task.verifier.get("timeout_sec"))
@@ -94,7 +102,7 @@ def g_hidden_tests(ctx: GradeContext) -> dict:
         out["strict_pass"] = bool(out["hidden_pass"] and out["regression_pass"])
     finally:
         guard.restore()
-    out["pass"] = all(bool(out.get(k)) for k in (ctx.task.gate or ["strict_pass"]))
+    out["pass"] = evaluate_gate(out, ctx.task.gate or ["strict_pass"])
     return out
 
 
@@ -127,22 +135,23 @@ def g_command(ctx: GradeContext) -> dict:
     require_clean_tree = true                # agent may not edit tracked files outside allowed_globs
     allowed_globs = ["build/**"]
     """
-    import json
-
-    from ..util import last_json
     g, ws = ctx.g, ctx.workspace
     out: dict = {}
-    ch = changed_files(ws, ctx.start_sha)
+    ch = ctx.tree().changed(ctx.start_sha)
     edits = sorted(p for p in ch if not glob_match(p, g.get("allowed_globs", [])) and not
                    glob_match(p, ["**/__pycache__/**", "**/*.pyc", "build/**", "_skbuild/**", "*.egg-info/**"]))
     out["tree_edits"] = edits
     out["clean_tree"] = not edits
     answer = last_json(ctx.answer)
     answer = answer if isinstance(answer, dict) else {}
+
+    def subst(text: str, quote: bool) -> str:
+        for k, v in answer.items():  # answer values are untrusted: shell-quoted in commands
+            text = text.replace("{answer." + k + "}", shlex.quote(str(v)) if quote else str(v))
+        return text
     results = []
     for cmd in g.get("commands", []):
-        for k, v in answer.items():
-            cmd = cmd.replace("{answer." + k + "}", str(v))
+        cmd = subst(cmd, quote=True)
         p = run_shell(cmd, cwd=ws, timeout=ctx.task.verifier.get("timeout_sec", 1800), env=ctx.config.test.env)
         results.append({"command": cmd, "rc": p.rc, "seconds": round(p.seconds, 2), "log_tail": p.out[-2000:]})
     out["commands"] = results
@@ -150,9 +159,8 @@ def g_command(ctx: GradeContext) -> dict:
     arts_ok = True
     found = []
     for a in g.get("artifacts", []):
-        for k, v in answer.items():
-            a = a.replace("{answer." + k + "}", str(v))
-        matches = [m for m in ws.glob(a) if m.is_file()] if not Path(a).is_absolute() else []
+        a = subst(a, quote=False)
+        matches = [m for m in ws.glob(a) if m.is_file() and within(ws, m)] if not Path(a).is_absolute() else []
         if not matches:
             arts_ok = False
             continue
@@ -166,8 +174,7 @@ def g_command(ctx: GradeContext) -> dict:
     out["artifacts"] = found
     out["artifacts_ok"] = arts_ok
     gate = ctx.task.gate or (["commands_ok", "artifacts_ok"] + (["clean_tree"] if g.get("require_clean_tree") else []))
-    out["pass"] = all(bool(out.get(k)) for k in gate)
-    out["answer_keys"] = json.dumps(sorted(answer))
+    out["pass"] = evaluate_gate(out, gate)
     return out
 
 

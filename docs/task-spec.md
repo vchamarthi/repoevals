@@ -57,12 +57,12 @@ integrity_gate = false         # true: an integrity violation fails this task
 
 | type | keys | pass |
 |---|---|---|
-| `hidden_tests` | `targets`, `regression_targets`, `root_cause_files`, `max_diff_lines`, `protected`, `allow_test_edits`, `hidden_dir` | gate (default `strict_pass` = targets and regression targets pass) |
+| `hidden_tests` | `targets`, `regression_targets`, `root_cause_files`, `max_diff_lines`, `protected`, `allow_test_edits`, `allow_hidden_skips`, `hidden_dir` | gate (default `strict_pass` = targets and regression targets pass, no hidden test skipped); edited existing tests and test infrastructure (`conftest.py`, `pytest.ini`, `tox.ini`) are reset first |
 | `command` | `commands`, `artifacts`, `artifact_kind` (`elf`/`wheel`/`zip`), `require_clean_tree`, `allowed_globs` | `commands_ok` and `artifacts_ok` (+ `clean_tree`) |
-| `mutation` | `targets` (else answer JSON `{"targets": [...]}`, else changed test files), `min_kill`, `oracle_min_kill`, `mutants_dir`, `rebuild_per_mutant` | baseline passes and kill rate ≥ `min_kill` |
+| `mutation` | `targets` (else answer JSON `{"targets": [...]}` — only test-file paths/node ids, no shell metacharacters; `answer_targets_are_labels = true` for build labels — else changed test files), `min_kill`, `oracle_min_kill`, `mutants_dir`, `rebuild_per_mutant` | baseline passes and kill rate ≥ `min_kill`; all non-test edits are reverted first |
 | `review_seeded` | `manifest`, `review_patch`, `review_title`, `max_findings`, `max_findings_clean`, `line_tol`, `kw_line_tol` | gate (default `recall>=0.5`, `precision>=0.5`, `decoys_flagged<=0`); no seeds = clean control |
 | `review_replay` | `gold`, `review_patch`, `line_tol`, `max_findings` | gate, else score-only (`pass: null`) |
-| `numeric` | `probe`, `python`, `tolerances` (`{dtype = [rtol, atol]}`), `min_case_pass`, `targets`, `pythonpath_workspace` | all (or `min_case_pass`) cases within tolerance and targets pass |
+| `numeric` | `probe`, `python`, `tolerances` (`{dtype = [rtol, atol]}`), `min_case_pass`, `targets`, `pythonpath_workspace` | all (or `min_case_pass`) cases within tolerance and targets pass. Candidate, reference and comparison run in three separate processes (arrays exchanged as `.npz`, no pickle), so library code cannot patch the comparator; a crashing candidate fails its cases. Import the library inside `candidate()` |
 | `perf` | `bench`, `repeats`, `warmup`, `min_speedup`, `targets`, `bench_timeout_sec` | correctness, then speedup CI lower bound ≥ `min_speedup` |
 
 ### Review answer format
@@ -95,6 +95,10 @@ run_dir/
   answer.txt       the agent's final message
   grade.json       heldout.grade/v1
 ```
+
+`prepare` also saves a bare copy of the workspace history in `run_dir/.heldout/start.git`. Graders diff the files
+on disk against it with a private index, so skip-worktree flags, `.git/info/exclude`, rewritten or deleted history in
+the workspace do not change what is graded.
 
 Any external harness can produce `workspace/`, `answer.txt`, `events.jsonl` and `meta.json` and call
 `heldout grade <run_dir>`; heldout does not need to run the agent itself.

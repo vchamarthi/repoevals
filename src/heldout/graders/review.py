@@ -29,7 +29,7 @@ import json
 import re
 
 from ..util import last_json
-from . import GradeContext
+from . import GradeContext, evaluate_gate
 
 SEVERE = ("blocker", "major", "critical", "high")
 DEFAULT_SEEDED_GATE = ["recall>=0.5", "precision>=0.5", "decoys_flagged<=0"]
@@ -70,33 +70,31 @@ def _dist(line: int, lines: list[int]) -> int:
 
 
 def _assign(cands: list[tuple[float, int, str]]) -> dict[int, str]:
-    """Greedy one-to-one assignment on (score desc): finding index -> target id."""
-    used_f, used_t, res = set(), set(), {}
-    for score, fi, tid in sorted(cands, key=lambda c: -c[0]):
-        if fi not in used_f and tid not in used_t:
-            res[fi] = tid
-            used_f.add(fi)
-            used_t.add(tid)
-    return res
+    """Maximum one-to-one matching of findings to targets (augmenting paths); among maximum matchings, findings are
+    tried in order of their best candidate score so the strongest evidence is matched first."""
+    adj: dict[int, list[tuple[float, str]]] = {}
+    for score, fi, tid in cands:
+        adj.setdefault(fi, []).append((score, tid))
+    for fi in adj:
+        adj[fi].sort(key=lambda x: -x[0])
+    owner: dict[str, int] = {}
+
+    def augment(fi: int, seen: set) -> bool:
+        for _, tid in adj[fi]:
+            if tid in seen:
+                continue
+            seen.add(tid)
+            if tid not in owner or augment(owner[tid], seen):
+                owner[tid] = fi
+                return True
+        return False
+    for fi in sorted(adj, key=lambda f: -adj[f][0][0]):
+        augment(fi, set())
+    return {fi: tid for tid, fi in owner.items()}
 
 
 def gate_pass(out: dict, gate: list) -> bool | None:
-    if not gate:
-        return None
-    ok = True
-    for g in gate:
-        m = re.fullmatch(r"\s*(\w+)\s*(>=|<=|==|>|<)\s*([-\d.]+)\s*", str(g))
-        if not m:
-            ok &= bool(out.get(str(g)))
-            continue
-        k, op, v = m.group(1), m.group(2), float(m.group(3))
-        x = out.get(k)
-        if isinstance(x, list):
-            x = len(x)
-        if x is None:
-            return False
-        ok &= {"<=": x <= v, ">=": x >= v, "==": x == v, "<": x < v, ">": x > v}[op]
-    return ok
+    return evaluate_gate(out, gate)
 
 
 def _prf(tp: int, n_expected: int, n_findings: int) -> dict:
@@ -120,6 +118,7 @@ def g_review_seeded(ctx: GradeContext) -> dict:
     kw_tol, line_tol = int(g.get("kw_line_tol", 15)), int(g.get("line_tol", 1))
     cands = []
     for fi, f in enumerate(findings):
+        mine = []
         for s in seeds:
             same = s["file"] == "*" or f["file"] == norm_path(s["file"])
             if not same:
@@ -128,11 +127,17 @@ def g_review_seeded(ctx: GradeContext) -> dict:
             d = _dist(f["line"], s.get("lines", []))
             if s["file"] == "*":
                 if kw:
-                    cands.append((1.0, fi, s["id"]))
+                    mine.append((1.0, d, s["id"]))
             elif kw and (not s.get("lines") or d <= kw_tol):
-                cands.append((2.0 - d / 1000, fi, s["id"]))
+                mine.append((2.0 - d / 1000, d, s["id"]))
             elif d <= line_tol:
-                cands.append((1.0 - d / 1000, fi, s["id"]))
+                mine.append((1.0 - d / 1000, d, s["id"]))
+        # a finding that names several problems is credited only for the one(s) nearest its line, so a single
+        # keyword-stuffed finding (or copies of it) cannot collect many seeds
+        if len(mine) > 1:
+            best = min(d for _, d, _ in mine)
+            mine = [m for m in mine if m[1] == best]
+        cands += [(score, fi, sid) for score, _, sid in mine]
     hit = _assign(cands)
     flagged = set()
     for fi, f in enumerate(findings):
@@ -202,8 +207,7 @@ def o_review(ctx: GradeContext) -> str:
 
 def spam_answer(ctx: GradeContext) -> str:
     """Adversarial probe for `heldout check`: one finding on every changed line of the review patch."""
-    from ..util import git
-    diff = git(ctx.workspace, "show", "--unified=0", "--no-color", "HEAD").out
+    diff = ctx.tree().show("--unified=0", "--no-color", ctx.start_sha)
     findings, cur, line = [], None, 0
     for ln in diff.splitlines():
         if ln.startswith("+++ b/"):

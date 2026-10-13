@@ -64,6 +64,10 @@ register them under the `heldout.graders` entry-point group.
 - **Integrity checks (LLM-free).** Skip/xfail markers, `GTEST_SKIP`, `DISABLED_` tests, or loosened tolerances added
   to tests; deleted tests; edits to protected files (e.g. skip/deselect lists); `git log`/`fetch`/`reflog` history
   mining; network access; reads of grader material. Reported on every grade, enforceable with `[integrity].gate`.
+- **Tamper-resistant grading.** Graders diff the tree against a copy of the history kept outside the workspace,
+  with a private index (skip-worktree, `info/exclude`, deleted `.git` change nothing); hidden files are written
+  through no agent-planted symlink; targets from answers are validated and shell-quoted; numeric candidates run in a
+  separate process from the comparison; timeouts kill whole process groups (and containers).
 - **Reproducible grading.** Grading snapshots the agent's tree and restores it afterwards; regrading gives the same
   answer. Infrastructure failures are `status: error` (not graded), never counted as agent failures.
 - **Process metrics** from a vendor-neutral trace (`events.jsonl`, converters for Claude Code and Codex):

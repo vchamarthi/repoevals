@@ -12,32 +12,30 @@ mutants, or this framework's config. `leak_scan` verifies this after preparation
 """
 from __future__ import annotations
 
-import io
 import json
 import shutil
-import tarfile
+import tempfile
 import time
 from pathlib import Path
 
 from .config import RepoConfig
 from .integrity import leak_scan
 from .task import Task
-from .util import apply_patch, git, git_commit, git_init_snapshot, glob_match
+from .util import apply_patch, git, git_commit, glob_match, run
 
 ARMS_HELP = """arms: guidance:raw (as checked in, default) | guidance:none (all guidance files deleted) |
 guidance:file=<path> (replace the root AGENTS.md with <path>, delete the rest)"""
 
 
 def _extract(source: Path, rev: str, dest: Path) -> None:
-    import subprocess
-    p = subprocess.run(["git", "-C", str(source), "archive", "--format=tar", rev], capture_output=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"git archive {rev} failed in {source}: {p.stderr.decode(errors='replace')[:500]}")
-    with tarfile.open(fileobj=io.BytesIO(p.stdout)) as tf:
-        try:
-            tf.extractall(dest, filter="data")  # type: ignore[call-arg]
-        except TypeError:  # Python < 3.12
-            tf.extractall(dest)
+    """Materialize the tree of `rev` into dest. Uses read-tree + checkout-index with a private index rather than
+    `git archive`, which would honour export-ignore/export-subst attributes and silently drop or rewrite files."""
+    with tempfile.TemporaryDirectory() as td:
+        env = {"GIT_INDEX_FILE": str(Path(td) / "index")}
+        for args in (["read-tree", rev], ["checkout-index", "-a", "-f", f"--prefix={dest.resolve()}/"]):
+            p = run(["git", "-C", str(source), *args], env=env)
+            if p.rc != 0:
+                raise RuntimeError(f"git {args[0]} {rev} failed in {source}: {p.out[:500]}")
 
 
 def apply_arm(ws: Path, cfg: RepoConfig, arm: str) -> list[str]:
@@ -75,12 +73,15 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     for d in sorted((p for p in ws.rglob("*") if p.is_dir()), reverse=True):
         if not any(d.iterdir()):
             d.rmdir()
+    # make ws its own repository before applying patches: `git apply` run inside a subdirectory of another
+    # repository (e.g. runs/ under the source checkout) silently skips paths outside that subdirectory
+    git(ws, "init", "-q", "-b", "main", check=True)
     if task.has("setup.patch"):
-        ap = apply_patch(ws, task.file("setup.patch"))  # git apply works outside a repository too
+        ap = apply_patch(ws, task.file("setup.patch"))
         if not ap.ok:
             raise RuntimeError(f"{task.id}: setup.patch does not apply at {base_sha[:12]}: {ap.out[:1000]}")
     arm_files = apply_arm(ws, cfg, arm)
-    start = git_init_snapshot(ws, "workspace")
+    start = git_commit(ws, "workspace")
     if task.has(task.grader.get("review_patch", "review.patch")):
         ap = apply_patch(ws, task.file(task.grader.get("review_patch", "review.patch")))
         if not ap.ok:
@@ -91,6 +92,12 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     problems = leak_scan(ws)
     if problems:
         raise RuntimeError(f"{task.id}: workspace leaks: {problems}")
+    # pristine copy of the workspace history, outside the workspace: graders diff against it (util.WorkTree)
+    hd = run_dir / ".heldout"
+    if hd.exists():
+        shutil.rmtree(hd)
+    hd.mkdir()
+    git(run_dir, "clone", "-q", "--bare", str(ws.resolve()), str((hd / "start.git").resolve()), check=True)
     (run_dir / "instruction.md").write_text(task.instruction)
     (run_dir / "task.json").write_text(json.dumps(task.to_json(), indent=1))
     meta = {"task": task.id, "task_dir": str(task.dir), "base": task.base, "base_sha": base_sha, "start_sha": start,

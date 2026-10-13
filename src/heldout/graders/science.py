@@ -14,7 +14,9 @@ type = "perf"
     min_speedup = 1.2                  # pass if the lower bound of the bootstrap CI of the speedup >= this
     targets = [...]                    # correctness gate via the repo adapter (hidden tests allowed)
     The baseline is the starting commit, built in a separate copy, measured interleaved with the candidate
-    to cancel machine drift. Speedup = median(base) / median(candidate).
+    to cancel machine drift. Speedup = median(base) / median(candidate). Each run gets PYTHONPATH=<its tree>;
+    for compiled extensions use an in-tree build ([test].build = "... build_ext --inplace"), because an editable
+    install points at whichever tree was built last.
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ import statistics
 import tempfile
 from pathlib import Path
 
-from ..util import copytree_overlay, git, run_shell
+from ..util import copytree_overlay, run_shell
 from . import GradeContext
 from .tests import TreeGuard, apply_reference
 
@@ -51,29 +53,45 @@ def _correctness(ctx: GradeContext, out: dict) -> bool:
     return True
 
 
+def _ws_env(ctx: GradeContext, tree: Path) -> dict:
+    """Test env plus PYTHONPATH=<tree>, so Python code is imported from the tree being measured."""
+    import os
+    env = dict(ctx.config.test.env)
+    if ctx.g.get("pythonpath_workspace", True):
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(tree), env.get("PYTHONPATH",
+                                                                            os.environ.get("PYTHONPATH", ""))]))
+    return env
+
+
 def g_numeric(ctx: GradeContext) -> dict:
     g, ws = ctx.g, ctx.workspace
     out: dict = {}
+    py = g.get("python", "python")
+    timeout = ctx.task.verifier.get("timeout_sec", 1800)
+    probe = ctx.task.dir / g.get("probe", "probe.py")
     guard = TreeGuard(ws)
-    try:
-        tests_ok = _correctness(ctx, out)
-        probe = ctx.task.dir / g.get("probe", "probe.py")
-        with tempfile.TemporaryDirectory() as td:
-            res_path = Path(td) / "numeric.json"
-            tol = json.dumps(g.get("tolerances", {}))
-            py = g.get("python", "python")
-            env = dict(ctx.config.test.env)
-            if g.get("pythonpath_workspace", True):  # import the agent's tree, not an installed copy
-                import os
-                env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(ws), env.get("PYTHONPATH",
-                                                                                  os.environ.get("PYTHONPATH", ""))]))
-            p = run_shell(f"{py} {RUNNER} {probe} {res_path} '{tol}'", cwd=ws,
-                          timeout=ctx.task.verifier.get("timeout_sec", 1800), env=env)
-            if not res_path.exists():
-                raise RuntimeError(f"numeric runner produced no results (rc={p.rc}): {p.out[-3000:]}")
-            cases = json.loads(res_path.read_text())
-    finally:
-        guard.restore()
+    with tempfile.TemporaryDirectory() as td:
+        cand, ref, res_path = Path(td) / "cand.npz", Path(td) / "ref.npz", Path(td) / "numeric.json"
+        try:
+            tests_ok = _correctness(ctx, out)
+            # 1. candidate: the agent's code, in its own process
+            p = run_shell(f"{py} {RUNNER} candidate {probe} {cand}", cwd=ws, timeout=timeout, env=_ws_env(ctx, ws))
+            out["candidate_rc"] = p.rc
+            if not cand.exists() or not Path(str(cand) + ".errors.json").exists():
+                out["candidate_log_tail"] = p.out[-3000:]
+        finally:
+            guard.restore()
+        # 2. reference, 3. comparison: trusted code only, not run from the workspace and without it on the path
+        r = run_shell(f"{py} -I {RUNNER} reference {probe} {ref}", cwd=td, timeout=timeout)
+        if not ref.exists():
+            raise RuntimeError(f"numeric reference failed (rc={r.rc}): {r.out[-3000:]}")
+        cand_arg = str(cand) if cand.exists() and Path(str(cand) + ".errors.json").exists() else "-"
+        tol = json.dumps(g.get("tolerances", {}))
+        c = run_shell(f"{py} -I {RUNNER} compare {probe} {cand_arg} {ref} {res_path} '{tol}'", cwd=td,
+                      timeout=timeout)
+        if not res_path.exists():
+            raise RuntimeError(f"numeric comparison failed (rc={c.rc}): {c.out[-3000:]}")
+        cases = json.loads(res_path.read_text())
     n_ok = sum(bool(c.get("ok")) for c in cases)
     out.update(cases=cases, n_cases=len(cases), n_cases_ok=n_ok,
                case_pass_rate=round(n_ok / len(cases), 3) if cases else None,
@@ -97,6 +115,17 @@ def _time(cmd: str, cwd: Path, env: dict, timeout: float) -> float | None:
     return p.seconds
 
 
+def export_tree(gitdir: Path, rev: str, dest: Path) -> None:
+    """Check out `rev` from gitdir into dest without touching any existing work tree or index."""
+    from ..util import run
+    with tempfile.TemporaryDirectory() as td:
+        env = {"GIT_INDEX_FILE": str(Path(td) / "index")}
+        for args in (["read-tree", rev], ["checkout-index", "-a", "-f"]):
+            p = run(["git", f"--git-dir={gitdir}", f"--work-tree={dest}", *args], cwd=dest, env=env)
+            if p.rc != 0:
+                raise RuntimeError(f"git {args[0]} failed: {p.out[:500]}")
+
+
 def bootstrap_ratio_ci(base: list[float], cand: list[float], n: int = 2000, alpha: float = 0.05,
                        seed: int = 0) -> tuple[float, float]:
     rng = random.Random(seed)
@@ -115,8 +144,9 @@ def g_perf(ctx: GradeContext) -> dict:
             out["pass"] = False
             return out
         # baseline tree = starting commit (+ hidden files so the bench sees the same harness)
-        git(ws, "worktree", "add", "--detach", str(base_dir / "t"), ctx.start_sha, check=True)
         bt = base_dir / "t"
+        bt.mkdir()
+        export_tree(ctx.tree().gitdir, ctx.start_sha, bt)
         hidden = ctx.task.dir / g.get("hidden_dir", "hidden")
         if hidden.is_dir():
             copytree_overlay(hidden, bt)
@@ -127,13 +157,14 @@ def g_perf(ctx: GradeContext) -> dict:
         bench_path = ctx.task.dir / bench.split()[-1]
         if bench_path.exists():
             bench = bench.replace(bench.split()[-1], str(bench_path))
-        env, timeout = ctx.config.test.env, float(g.get("bench_timeout_sec", 600))
+        timeout = float(g.get("bench_timeout_sec", 600))
+        envs = {bt: _ws_env(ctx, bt), ws: _ws_env(ctx, ws)}
         base_t, cand_t = [], []
         for _ in range(int(g.get("warmup", 1))):
-            _time(bench, bt, env, timeout), _time(bench, ws, env, timeout)
+            _time(bench, bt, envs[bt], timeout), _time(bench, ws, envs[ws], timeout)
         for _ in range(int(g.get("repeats", 7))):
-            for which, tree, acc in (("b", bt, base_t), ("c", ws, cand_t)):
-                v = _time(bench, tree, env, timeout)
+            for tree, acc in ((bt, base_t), (ws, cand_t)):
+                v = _time(bench, tree, envs[tree], timeout)
                 if v is not None:
                     acc.append(v)
         if len(base_t) < 3 or len(cand_t) < 3:
@@ -145,7 +176,6 @@ def g_perf(ctx: GradeContext) -> dict:
                    noise_cv_base=round(statistics.pstdev(base_t) / statistics.mean(base_t), 3))
         out["pass"] = lo >= float(g.get("min_speedup", 1.1))
     finally:
-        git(ws, "worktree", "remove", "--force", str(base_dir / "t"))
         shutil.rmtree(base_dir, ignore_errors=True)
         guard.restore()
     return out

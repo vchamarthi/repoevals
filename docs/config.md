@@ -8,13 +8,14 @@ id = "dpnp"                                   # used in reports
 url = "https://github.com/IntelPython/dpnp"
 tasks = ".agent-evals/tasks"                  # removed from the agent's workspace
 graders = ".agent-evals/graders"              # optional repo-local grader plugins (*.py with GRADERS/ORACLES)
+hide = ["dev/agent_evals/**"]                 # optional extra paths removed from the agent's workspace
 
 [guidance]                                    # files the guidance arms add/remove; also scanned by guidance-lint
 globs = ["**/AGENTS.md", "**/CLAUDE.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["dpnp/tests/**"]                # test files (integrity checks, mutation, reset of edited tests)
-library_globs = ["dpnp/**"]                   # library files (reset before mutation grading)
+library_globs = ["dpnp/**"]                   # library source (mutation grading reverts every non-test edit)
 protected_globs = ["dpnp/tests/skipped_tests*.tbl"]   # reset to pristine before every grade
 formatter = "pre-commit run --files {files}"  # optional: format_ok metric (never a gate unless you gate it)
 
@@ -39,10 +40,13 @@ gate = false                                  # true: integrity violations fail 
 
 | adapter | targets | status mapping |
 |---|---|---|
-| `pytest` | node ids / files | rc 0 passed, 1 failed, 2 build_error (collection/import), 5 no_tests; per-test results from JUnit XML |
+| `pytest` | node ids / files | rc 0 passed, 1 failed, 2 build_error (collection/import), 5 no_tests; per-test results from JUnit XML. rc 0 without a JUnit report is `error`; rc 0 with nothing passed (all skipped) is `no_tests` |
 | `bazel` | labels | rc 0 passed, 1 build_error, 3 failed, 4 no_tests |
 | `ctest` | `-R` regexes | `build` should configure + compile; summary line parsed |
 | `command` | substituted into `{targets}` | `rc_map`, default rc 0 passed / otherwise failed |
+
+Targets are always shell-quoted before they reach the configured command, because they can come from an agent's
+answer.
 
 ## Environment variables
 

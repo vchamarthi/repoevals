@@ -16,6 +16,8 @@ from statistics import mean
 
 def pass_at_k(n: int, c: int, k: int) -> float:
     """Probability that at least one of k samples (from n trials with c successes) passes."""
+    if c == 0:
+        return 0.0
     if n - c < k:
         return 1.0
     return 1.0 - math.prod((n - c - i) / (n - i) for i in range(k))

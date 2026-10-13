@@ -18,6 +18,9 @@ from .stats import cluster_bootstrap, paired_compare, pass_at_k, pass_hat_k
 def load_grades(root: Path) -> list[dict]:
     out = []
     for p in sorted(root.rglob("grade.json")):
+        # only grade.json written by heldout next to its meta.json, never files inside a workspace
+        if not (p.parent / "meta.json").exists() or "workspace" in p.relative_to(root).parts[:-1]:
+            continue
         try:
             g = json.loads(p.read_text())
         except ValueError:

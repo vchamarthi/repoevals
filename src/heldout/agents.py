@@ -31,9 +31,10 @@ class AgentResult:
     answer: str
 
 
-def _docker_wrap(argv: list[str], ws: Path, image: str, network: str = "none", env: dict | None = None) -> list[str]:
+def _docker_wrap(argv: list[str], ws: Path, image: str, network: str = "none", env: dict | None = None,
+                 name: str = "") -> list[str]:
     cmd = ["docker", "run", "--rm", "-i", f"--network={network}", "-v", f"{ws.resolve()}:/workspace",
-           "-w", "/workspace"]
+           "-w", "/workspace"] + (["--name", name] if name else [])
     for k, v in (env or {}).items():
         cmd += ["-e", f"{k}={v}"]
     return cmd + [image] + argv
@@ -64,10 +65,15 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
     else:
         raise ValueError(f"unknown agent {agent!r}: claude-code | codex | noop | cmd:<template>")
     argv += shlex.split(extra_args)
+    container = ""
     if docker:
-        argv = _docker_wrap(argv, ws, docker, network, env)
+        import uuid
+        container = f"heldout-{uuid.uuid4().hex[:12]}"
+        argv = _docker_wrap(argv, ws, docker, network, env, container)
     t0 = time.time()
-    p = run(argv, cwd=ws, timeout=timeout, env=env, stdin=prompt)
+    p = run(argv, cwd=ws, timeout=timeout, env=env, stdin=prompt)  # kills the whole process group on timeout
+    if container and p.timed_out:  # the container outlives a killed `docker run` client
+        run(["docker", "kill", container])
     (run_dir / "agent_stdout.log").write_text(p.out)
     if converter:
         events, answer = CONVERTERS[converter](p.out.splitlines())

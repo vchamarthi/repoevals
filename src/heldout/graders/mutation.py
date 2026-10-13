@@ -22,17 +22,27 @@ Reference solution: oracle_tests/ copied into the tree (answer gives targets whe
 """
 from __future__ import annotations
 
-from ..util import apply_patch, changed_files, copytree_overlay, glob_match, last_json, restore_paths
+import re
+
+from ..util import apply_patch, copytree_overlay, glob_match, last_json
 from . import GradeContext
 from .tests import TreeGuard
 
 
+SAFE_TARGET = re.compile(r"^[\w./:\-\[\],=+@]+$")
+
+
 def targets_for(ctx: GradeContext, changed: dict[str, str]) -> list[str]:
+    """Fixed targets from the task, else the agent's answer, else the test files it changed. Targets from the
+    answer must name test files (`path` or `path::node`) with no shell metacharacters; others are dropped."""
     if ctx.g.get("targets"):
         return list(ctx.g["targets"])
     ans = last_json(ctx.answer)
     if isinstance(ans, dict) and isinstance(ans.get("targets"), list) and ans["targets"]:
-        return [str(t) for t in ans["targets"]]
+        tg = [str(t) for t in ans["targets"]]
+        if ctx.g.get("answer_targets_are_labels"):  # e.g. bazel labels: validate charset only
+            return [t for t in tg if SAFE_TARGET.match(t)]
+        return [t for t in tg if SAFE_TARGET.match(t) and glob_match(t.split("::")[0], ctx.config.test_globs)]
     return sorted(p for p, s in changed.items() if s != "D" and glob_match(p, ctx.config.test_globs))
 
 
@@ -41,16 +51,16 @@ def g_mutation(ctx: GradeContext) -> dict:
     mutants = sorted((ctx.task.dir / g.get("mutants_dir", "mutants")).glob("*.patch"))
     if not mutants:
         raise FileNotFoundError(f"{ctx.task.id}: no mutants")
-    ch = changed_files(ws, ctx.start_sha)
+    ch = ctx.tree().changed(ctx.start_sha)
     targets = targets_for(ctx, ch)
     out: dict = {"targets": targets, "n_mutants": len(mutants)}
     if not targets:
         return {**out, "pass": False, "no_targets": True}
     guard = TreeGuard(ws)
     try:
-        lib_edits = [p for p in ch if p not in targets and not glob_match(p, ctx.config.test_globs)
-                     and (glob_match(p, ctx.config.library_globs) if ctx.config.library_globs else True)]
-        out["library_reset"] = restore_paths(ws, ctx.start_sha, sorted(lib_edits))
+        # the task is to test, not to change code: everything that is not a test file goes back to the start
+        lib_edits = [p for p in ch if not glob_match(p, ctx.config.test_globs)]
+        out["library_reset"] = ctx.tree().restore(ctx.start_sha, sorted(lib_edits))
         adapter = ctx.adapter()
         base = adapter.run(ws, targets)
         out["baseline"] = base.summary()
@@ -61,10 +71,8 @@ def g_mutation(ctx: GradeContext) -> dict:
         per, killed, survived, invalid, timeouts = {}, 0, 0, 0, 0
         for m in mutants:
             ap = apply_patch(ws, m)
-            if not ap.ok:
-                per[m.stem] = "does_not_apply"
-                invalid += 1
-                continue
+            if not ap.ok:  # library code is pristine here, so this is a defect of the task, not of the tests
+                raise RuntimeError(f"mutant {m.name} does not apply to the starting tree: {ap.out[:500]}")
             r = adapter.run(ws, targets, build=bool(g.get("rebuild_per_mutant", True)))
             if r.status == "failed":
                 per[m.stem], killed = "killed", killed + 1

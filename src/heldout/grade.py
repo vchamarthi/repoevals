@@ -22,7 +22,6 @@ from .graders import GRADERS, ORACLES, GradeContext, load_repo_graders
 from .integrity import check as integrity_check
 from .task import Task, host_supports, load_task
 from .trace import process_metrics, read_events
-from .util import changed_files
 
 
 def split_result(g: dict) -> tuple[dict, dict]:
@@ -38,9 +37,10 @@ def context(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> GradeCo
     meta = json.loads((run_dir / "meta.json").read_text())
     task = task or load_task(Path(meta["task_dir"]))
     answer = run_dir / "answer.txt"
-    return GradeContext(run_dir=run_dir, workspace=run_dir / "workspace", task=task, config=cfg,
+    backup = run_dir / ".heldout" / "start.git"
+    return GradeContext(run_dir=run_dir, workspace=(run_dir / "workspace").resolve(), task=task, config=cfg,
                         start_sha=meta["start_sha"], answer=answer.read_text() if answer.exists() else "",
-                        events=read_events(run_dir))
+                        events=read_events(run_dir), gitdir=backup if backup.is_dir() else None)
 
 
 def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
@@ -63,8 +63,9 @@ def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
             raise KeyError(f"unknown grader {t.grader_type!r}; known: {sorted(GRADERS)}")
         out["process"] = process_metrics(ctx.events, cfg.guidance_globs, t.grader.get("build_regex", ""))
         markers = [str(t.dir), ".agent-evals", "oracle.patch", "oracle_tests", "/hidden/", "mutants/"]
-        ch = changed_files(ctx.workspace, ctx.start_sha)
-        out["integrity"] = integrity_check(ctx.workspace, ctx.start_sha, ctx.events, ch, cfg.test_globs,
+        tree = ctx.tree()
+        ch = tree.changed(ctx.start_sha)
+        out["integrity"] = integrity_check(tree, ctx.start_sha, ctx.events, ch, cfg.test_globs,
                                            cfg.protected_globs + list(t.grader.get("protected", [])), markers,
                                            allow_history=bool(t.grader.get("allow_history", False)))
         g = GRADERS[t.grader_type](ctx)

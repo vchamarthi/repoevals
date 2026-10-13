@@ -8,6 +8,7 @@ repository's build and test tooling lives here, so graders stay generic.
     url = "https://github.com/IntelPython/dpnp"
     tasks = ".agent-evals/tasks"          # one sub-directory per task
     graders = ".agent-evals/graders"      # optional: repo-local grader plugins (*.py exporting GRADERS)
+    hide = ["dev/agent_evals/**"]         # optional: more paths removed from the agent's workspace
 
     [guidance]                            # agent instructions; the "guidance:none" arm deletes these
     globs = ["**/AGENTS.md", "**/CLAUDE.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
@@ -43,6 +44,9 @@ DEFAULT_GUIDANCE = ["**/AGENTS.md", "**/CLAUDE.md", "**/GEMINI.md", ".github/cop
                     ".github/instructions/*.md", ".cursor/rules/**", ".cursorrules"]
 DEFAULT_TEST_GLOBS = ["tests/**", "test/**", "**/tests/**", "**/test_*.py", "**/*_test.py", "**/*_test.cpp",
                       "**/test/*.cpp"]
+# test infrastructure the agent could use to skip or deselect tests without touching a test file; reset before
+# grading by hidden_tests and included in integrity checks
+TEST_INFRA_GLOBS = ["conftest.py", "**/conftest.py", "pytest.ini", "**/pytest.ini", "tox.ini", ".pytest.ini"]
 CONFIG_NAMES = ("heldout.toml", ".agent-evals/heldout.toml")
 
 
@@ -63,6 +67,7 @@ class RepoConfig:
     url: str = ""
     tasks: str = ".agent-evals/tasks"
     graders: str = ""
+    hide: list[str] = field(default_factory=list)
     guidance_globs: list[str] = field(default_factory=lambda: list(DEFAULT_GUIDANCE))
     test_globs: list[str] = field(default_factory=lambda: list(DEFAULT_TEST_GLOBS))
     library_globs: list[str] = field(default_factory=list)
@@ -83,12 +88,11 @@ class RepoConfig:
 
     @property
     def eval_globs(self) -> list[str]:
-        """Paths removed from the agent's workspace: the task definitions (and the config) must stay hidden."""
-        top = Path(self.tasks).parts[0] if Path(self.tasks).parts else self.tasks
-        globs = [f"{top}/**", "heldout.toml"]
+        """Paths removed from the agent's workspace: task definitions, repo graders, this config, `[repo].hide`."""
+        globs = [f"{self.tasks.rstrip('/')}/**", "heldout.toml", ".agent-evals/**"]
         if self.graders:
-            globs.append(f"{Path(self.graders).parts[0]}/**")
-        return globs
+            globs.append(f"{self.graders.rstrip('/')}/**")
+        return globs + list(self.hide)
 
 
 def find_config(start: Path) -> Path | None:
@@ -117,6 +121,7 @@ def load_config(path: Path | None = None, root: Path | None = None) -> RepoConfi
         url=repo.get("url", ""),
         tasks=repo.get("tasks", ".agent-evals/tasks"),
         graders=repo.get("graders", ""),
+        hide=list(repo.get("hide", [])),
         guidance_globs=guid.get("globs", list(DEFAULT_GUIDANCE)),
         test_globs=pol.get("test_globs", list(DEFAULT_TEST_GLOBS)),
         library_globs=pol.get("library_globs", []),

@@ -33,11 +33,11 @@ set -uo pipefail
 mkdir -p /logs/verifier
 RUN=/tmp/heldout-run
 mkdir -p "$RUN"
-ln -sfn /workspace "$RUN/workspace"
+ln -sfn /workspace "$RUN/workspace"  # graded in place; heldout resolves the link
 cp /tests/meta.json "$RUN/meta.json"
 sed -i "s#__TASK_DIR__#/tests/task#" "$RUN/meta.json"
 [ -f /logs/agent/answer.txt ] && cp /logs/agent/answer.txt "$RUN/answer.txt"
-heldout grade "$RUN" --config /tests/heldout.toml || true
+heldout --config /tests/heldout.toml grade "$RUN" || true
 python3 - <<'PY'
 import json
 g = json.load(open("/tmp/heldout-run/grade.json"))

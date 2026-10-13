@@ -12,6 +12,7 @@ Adapters are chosen by `[test].adapter` in heldout.toml and can be overridden pe
 from __future__ import annotations
 
 import re
+import shlex
 import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -21,6 +22,11 @@ from ..config import TestConfig
 from ..util import Proc, fmt, run_shell
 
 STATUSES = ("passed", "failed", "build_error", "no_tests", "timeout", "error")
+
+
+def quote_targets(targets: list[str]) -> str:
+    """Targets can come from an agent's answer: always shell-quoted, never interpreted."""
+    return " ".join(shlex.quote(str(t)) for t in targets)
 
 
 @dataclass
@@ -73,7 +79,7 @@ class CommandAdapter(Adapter):
     name = "command"
 
     def _run(self, ws, targets, timeout):
-        cmd = fmt(self.cfg.command or "{targets}", targets=" ".join(targets))
+        cmd = fmt(self.cfg.command or "{targets}", targets=quote_targets(targets))
         p = run_shell(cmd, cwd=ws, timeout=timeout, env=self.cfg.env)
         if p.timed_out:
             status = "timeout"
@@ -91,7 +97,7 @@ class PytestAdapter(Adapter):
         with tempfile.TemporaryDirectory() as td:
             junit = Path(td) / "junit.xml"
             base = self.cfg.command or "python -m pytest -q -p no:cacheprovider {targets}"
-            cmd = fmt(base, targets=" ".join(targets)) + f" --junitxml={junit}"
+            cmd = fmt(base, targets=quote_targets(targets)) + f" --junitxml={shlex.quote(str(junit))}"
             p = run_shell(cmd, cwd=ws, timeout=timeout, env=self.cfg.env)
             res = TestResult("timeout" if p.timed_out else self.RC.get(p.rc, "error"), rc=p.rc,
                              seconds=p.seconds, command=cmd, log=p.out)
@@ -109,6 +115,13 @@ class PytestAdapter(Adapter):
                             res.passed += 1
                 except ET.ParseError:
                     pass
+            # rc 0 is only a pass if pytest really ran and reported tests: a process that exits 0 early (os._exit,
+            # sys.exit in a conftest) writes no JUnit report; a run where everything was skipped passed nothing
+            if res.status == "passed" and not junit.exists():
+                res.status = "error"
+                res.log += "\nheldout: pytest exited 0 without writing a JUnit report"
+            elif res.status == "passed" and res.passed == 0:
+                res.status = "no_tests"
             # collection errors are reported as errors with rc 1 or 2 depending on the plugin set
             if res.status == "failed" and res.passed == 0 and "error" in p.out.lower() and \
                     re.search(r"(ImportError|ModuleNotFoundError|SyntaxError|errors? during collection)", p.out):
@@ -123,7 +136,7 @@ class BazelAdapter(Adapter):
 
     def _run(self, ws, targets, timeout):
         base = self.cfg.command or "bazel test --nocache_test_results --test_output=errors {targets}"
-        cmd = fmt(base, targets=" ".join(targets))
+        cmd = fmt(base, targets=quote_targets(targets))
         p = run_shell(cmd, cwd=ws, timeout=timeout, env=self.cfg.env)
         res = TestResult("timeout" if p.timed_out else self.RC.get(p.rc, "error"), rc=p.rc, seconds=p.seconds,
                          command=cmd, log=p.out)
@@ -138,7 +151,7 @@ class CTestAdapter(Adapter):
     name = "ctest"
 
     def _run(self, ws, targets, timeout):
-        sel = f"-R '{'|'.join(targets)}'" if targets else ""
+        sel = f"-R {shlex.quote('|'.join(targets))}" if targets else ""
         base = self.cfg.command or "ctest --test-dir build --output-on-failure {targets}"
         cmd = fmt(base, targets=sel)
         p = run_shell(cmd, cwd=ws, timeout=timeout, env=self.cfg.env)

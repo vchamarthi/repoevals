@@ -16,13 +16,15 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import pkgutil
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
 from ..adapters import Adapter, get_adapter
-from ..config import RepoConfig
+from ..config import TEST_INFRA_GLOBS, RepoConfig
 from ..task import Task
+from ..util import WorkTree
 
 GRADERS: dict[str, Callable] = {}
 ORACLES: dict[str, Callable] = {}
@@ -38,6 +40,12 @@ class GradeContext:
     answer: str = ""
     events: list = field(default_factory=list)
     log: list = field(default_factory=list)
+    gitdir: Path | None = None  # pristine copy of the workspace history saved by `prepare` (outside the workspace)
+
+    def tree(self) -> WorkTree:
+        """Tamper-resistant git view of the agent's tree (see util.WorkTree)."""
+        return WorkTree(self.workspace, self.gitdir, self.config.test_globs + TEST_INFRA_GLOBS +
+                        self.config.protected_globs)
 
     @property
     def g(self) -> dict:
@@ -49,6 +57,27 @@ class GradeContext:
 
     def note(self, msg: str) -> None:
         self.log.append(msg)
+
+
+def evaluate_gate(out: dict, gate: list) -> bool | None:
+    """Gate entries are metric names (must be truthy) or comparisons such as "recall>=0.6", "decoys_flagged<=0"
+    (a list-valued metric compares by length). None when there is no gate; False when a metric is missing."""
+    if not gate:
+        return None
+    ok = True
+    for g in gate:
+        m = re.fullmatch(r"\s*(\w+)\s*(>=|<=|==|>|<)\s*([-\d.eE]+)\s*", str(g))
+        if not m:
+            ok &= bool(out.get(str(g).strip()))
+            continue
+        k, op, v = m.group(1), m.group(2), float(m.group(3))
+        x = out.get(k)
+        if isinstance(x, (list, tuple, dict)):
+            x = len(x)
+        if x is None or isinstance(x, str):
+            return False
+        ok &= {"<=": x <= v, ">=": x >= v, "==": x == v, "<": x < v, ">": x > v}[op]
+    return bool(ok)
 
 
 def _register(mod) -> None:
