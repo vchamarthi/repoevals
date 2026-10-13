@@ -51,6 +51,17 @@ def validate_task(t: Task, cfg: RepoConfig, source: Path | None = None) -> list[
         errs.append(f"unknown grader {t.grader_type!r}")
     if not t.instruction.strip():
         errs.append("empty instruction (instruction.md or prompt)")
+    if "<!-- repoevals:draft" in t.instruction:
+        errs.append("instruction.md is still the draft template")
+    if any(str(x).startswith("TODO") for x in t.grader.get("targets", [])):
+        errs.append("[grader].targets still contains TODO placeholders")
+    if not re.fullmatch(r"[0-9a-f]{40}(\^+|~\d+)?", t.base):
+        errs.append(f"warning: base {t.base!r} is not a commit SHA; the task changes as the branch moves "
+                    "(`repoevals author pin`)")
+    if t.status == "draft":
+        errs.append('warning: draft task (review it, then `repoevals author approve` or set status = "ready")')
+    elif t.status != "ready":
+        errs.append(f'unknown status {t.status!r} (use "draft" or "ready")')
     for key, default in REQUIRED_FILES.get(t.grader_type, []):
         if not (t.dir / t.grader.get(key, default)).exists():
             errs.append(f"missing {t.grader.get(key, default)}")
@@ -74,7 +85,7 @@ def validate_task(t: Task, cfg: RepoConfig, source: Path | None = None) -> list[
                 errs.append(f"{f} is not valid JSON: {e}")
     if not t.metadata.get("created"):
         errs.append("warning: [metadata].created missing (needed to filter by model training cutoff)")
-    for pat in HINT_PATTERNS:
+    for pat in HINT_PATTERNS if "<!-- repoevals:draft" not in t.instruction else []:
         m = re.search(pat, t.instruction, re.I)
         if m:
             errs.append(f"warning: instruction may leak the fix: {m.group(0)!r}")

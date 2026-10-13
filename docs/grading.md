@@ -16,9 +16,25 @@ For every attempt, `prepare` creates a fresh workspace:
 The agent therefore cannot recover the upstream solution from git history, and never sees hidden tests, reference
 solutions, mutants or manifests.
 
-A copy of the workspace history is stored outside the workspace (`<run_dir>/.repoevals/start.git`). Graders compare
-the files on disk against it using a private index, so changes to the workspace's `.git` — skip-worktree flags,
-exclude files, rewritten or deleted history — do not affect grading.
+A copy of the workspace history is stored outside the workspace (`<run_dir>/.repoevals/start.git`), together with a
+copy of the task (`<run_dir>/.repoevals/tasks/`). Graders compare the files on disk against that history using a
+private index, so changes to the workspace's `.git` — skip-worktree flags, exclude files, rewritten or deleted
+history — do not affect grading, and regrading an attempt later uses the task exactly as it was when the attempt ran.
+
+## Isolation and threat model
+
+| mode | what the agent can reach | use for |
+|---|---|---|
+| local (default) | the workspace, plus anything your user account can read: other run directories, the source checkout, task files | trusted agents, development, quick comparisons |
+| `--docker` | the workspace and the prompt only; credentials listed in `env_passthrough` | results you publish, untrusted agents |
+
+repoevals reduces local-mode exposure — run directories are kept outside the repository, credentials are removed
+from the agent's environment, and reads of the source checkout or task files are flagged — but a local agent runs
+with your permissions, and trace-based checks only see what the agent's trace records. Treat integrity checks as
+evidence to review, and use a container where results must be trustworthy against a determined agent.
+
+Grading always runs on the host and executes code the agent wrote (builds, tests, benchmarks). It never receives
+your credentials, and every step has a time limit.
 
 ## Grading
 
@@ -27,7 +43,11 @@ exclude files, rewritten or deleted history — do not affect grading.
   restored too.
 - Hidden files are written into the tree only for grading, and never through links the agent created.
 - Test targets taken from an agent's answer are validated and shell-quoted.
-- Numerical candidates run in a separate process from the reference and the comparison.
+- Files that would shadow the test runner or hook interpreter start-up (`pytest.py`, `sitecustomize.py`, `*.pth`, …)
+  are removed before tests run.
+- Numerical candidates run in a separate process that sees only the test cases, never the reference or the
+  comparison.
+- Benchmarks are timed by repoevals, not by output of the benchmarked code.
 - Timeouts stop the entire process tree of the agent or test run, including the agent's container.
 - An infrastructure failure is recorded as status `error` and excluded from pass rates; it is never counted as a
   failure of the agent.
@@ -44,8 +64,11 @@ Every graded run includes an `integrity` section. Violations are reported, and f
 | `history_mining` | git commands that search history or remotes (`git log`, `reflog`, `fetch`, `remote`, `cat-file`, …) |
 | `network` | network tools and URLs in commands (reported, not a violation) |
 | `grader_probing` | reads of task files, hidden tests, reference solutions or mutants |
+| `source_access` | reads, edits or commands that touch the source checkout outside the workspace |
+| `meta_testing` | tests (in test-writing tasks) that inspect source files, hashes or patches instead of behaviour |
 
-Trace-based checks need the agent's trace (`events.jsonl`), which `repoevals run` records for Claude Code and Codex.
+Trace-based checks need the agent's trace (`events.jsonl`), which `repoevals run` records for Claude Code and Codex;
+results of `cmd:` agents are marked `trace: none`. Each graded run also stores the agent's changes as `agent.diff`.
 
 ## Task self-check
 

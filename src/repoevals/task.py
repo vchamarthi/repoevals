@@ -21,6 +21,7 @@ exported to Harbor with `repoevals export harbor`. Everything repoevals-specific
     version = "1.0"
     [metadata]
     family = "fix"                      # build | fix | feature | test | review | numeric | perf | custom
+    status = "ready"                    # draft (excluded from `run` by default) | ready
     base = "a492e703^"                  # commit of the upstream repo the workspace is snapshotted from
     created = 2026-05-14                # contamination control: date the fix/content became public
     source = "https://github.com/org/repo/pull/3742"
@@ -42,6 +43,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,12 +82,20 @@ class Task:
         return (self.dir / name).exists()
 
     @property
+    def status(self) -> str:
+        """"draft" (generated or under review) or "ready" (approved for agent runs). Default: ready."""
+        return str(self.metadata.get("status", "ready"))
+
+    @property
     def requires(self) -> dict:
         return self.environment.get("requires", {})
 
     def to_json(self) -> dict:
         return {"id": self.id, "family": self.family, "base": self.base, "grader": self.grader,
                 "metadata": self.metadata, "environment": self.environment, "dir": str(self.dir)}
+
+
+TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def load_task(task_dir: Path) -> Task:
@@ -103,8 +113,11 @@ def load_task(task_dir: Path) -> Task:
     md = dict(data.get("metadata", {}))
     instr_path = task_dir / "instruction.md"
     instruction = instr_path.read_text() if instr_path.exists() else data.get("prompt", "")
+    task_id = str(md.get("id", task_dir.name))
+    if not TASK_ID_RE.match(task_id) or task_id in (".", ".."):
+        raise ValueError(f"invalid task id {task_id!r}: use letters, digits, '.', '_' and '-' only")
     return Task(
-        id=md.get("id", task_dir.name),
+        id=task_id,
         dir=task_dir,
         family=md.get("family", "custom"),
         base=str(md.get("base", "HEAD")),
@@ -139,6 +152,29 @@ def discover(tasks_dir: Path, select: list[str] | None = None) -> list[Task]:
     return [t for t in tasks if keep(t)]
 
 
+def _cpu_info() -> tuple[set[str], str]:
+    """(lower-case CPU feature flags, vendor id) on Linux (/proc/cpuinfo) and macOS (sysctl)."""
+    have: set[str] = set()
+    vendor = ""
+    if Path("/proc/cpuinfo").exists():
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("flags"):
+                have |= set(line.split(":", 1)[1].split())
+            elif line.startswith("vendor_id"):
+                vendor = line.split(":", 1)[1].strip()
+    else:
+        import subprocess
+        def sysctl(key: str) -> str:
+            try:
+                return subprocess.run(["sysctl", "-n", key], capture_output=True, text=True, timeout=5).stdout
+            except (OSError, subprocess.SubprocessError):
+                return ""
+        for key in ("machdep.cpu.features", "machdep.cpu.leaf7_features", "machdep.cpu.extfeatures"):
+            have |= {f.lower().replace(".", "_") for f in sysctl(key).split()}
+        vendor = sysctl("machdep.cpu.vendor").strip()
+    return have, vendor
+
+
 def host_supports(task: Task) -> tuple[bool, str]:
     """Whether this machine meets [environment].requires; the reason when it does not (task is SKIPPED)."""
     req = task.requires
@@ -149,14 +185,7 @@ def host_supports(task: Task) -> tuple[bool, str]:
     flags = set(req.get("cpu_flags", []))
     vendors = set(req.get("cpu_vendors", []))
     if flags or vendors:
-        info = Path("/proc/cpuinfo").read_text() if Path("/proc/cpuinfo").exists() else ""
-        have = set()
-        vendor = ""
-        for line in info.splitlines():
-            if line.startswith("flags"):
-                have |= set(line.split(":", 1)[1].split())
-            if line.startswith("vendor_id"):
-                vendor = line.split(":", 1)[1].strip()
+        have, vendor = _cpu_info()
         if flags - have:
             return False, f"missing CPU flags {sorted(flags - have)}"
         if vendors and vendor not in vendors:

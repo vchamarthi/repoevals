@@ -1,20 +1,26 @@
-# Starter config for uxlfoundation/scikit-learn-intelex (sklearnex + daal4py + onedal bindings).
+# Starter config for uxlfoundation/scikit-learn-intelex: sklearnex, daal4py and the onedal bindings
+# (copy to the repository root as repoevals.toml).
 [repo]
 id = "sklearnex"
 url = "https://github.com/uxlfoundation/scikit-learn-intelex"
 
 [guidance]
-globs = ["**/AGENTS.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".claude/**", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["sklearnex/**/tests/**", "daal4py/**/tests/**", "onedal/**/tests/**", "tests/**"]
 library_globs = ["sklearnex/**", "daal4py/**", "onedal/**"]
-# the sklearn conformance deselect list must never be edited by the agent
+# the scikit-learn conformance deselect list must never be edited by the agent
 protected_globs = ["deselected_tests.yaml"]
+
+[environment]
+setup = "DALROOT=$CONDA_PREFIX NO_DPC=1 NO_DIST=1 python setup.py build_ext --inplace --force -q"
+setup_timeout_sec = 7200
 
 [test]
 adapter = "pytest"
-build = "DALROOT=$CONDA_PREFIX NO_DPC=1 NO_DIST=1 python setup.py build_ext --inplace --force -q"
+build = "DALROOT=$CONDA_PREFIX NO_DPC=1 NO_DIST=1 python setup.py build_ext --inplace -q"
+rebuild_globs = ["**/*.cpp", "**/*.h", "**/*.hpp", "**/*.pyx", "**/*.pxd", "setup.py", "**/CMakeLists.txt"]
 command = "python -m pytest -q -p no:randomly {targets}"
 timeout_sec = 3600
 env = { OMP_NUM_THREADS = "2" }

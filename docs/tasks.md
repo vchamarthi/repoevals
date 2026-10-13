@@ -20,6 +20,7 @@ A task is a directory inside your tasks folder. Its name is the task id.
 | `oracle_tests/` | `mutation` | reference tests, copied onto the workspace |
 | `probe.py` | `numeric` | test cases, candidate call and reference implementation |
 | `bench.py` | `perf` | benchmark printing `{"seconds": <float>}` |
+| `AUTHOR_NOTES.md` | authoring | notes written by `repoevals author`; informational |
 
 None of these files are visible to the agent.
 
@@ -52,7 +53,8 @@ gate = ["strict_pass"]
 
 | key | description |
 |---|---|
-| `metadata.family` | `build`, `fix`, `feature`, `test`, `review`, `numeric`, `perf`, `port`, `docs` or `custom` |
+| `metadata.family` | `build`, `fix`, `feature`, `test`, `review`, `numeric`, `perf`, `port`, `docs` or `custom`. `port`, `docs` and `custom` have no dedicated grader: use `hidden_tests`, `command` or your own |
+| `metadata.status` | `ready` (default) or `draft`. Drafts are skipped by `run` unless `--include-drafts` is given |
 | `metadata.base` | git revision the workspace is created from |
 | `metadata.created` | date the solution became public; carried into every result |
 | `metadata.source`, `difficulty`, `tags` | informational; `tags` can be used to select tasks (`tag:<name>`) |
@@ -108,7 +110,9 @@ allowed_globs = ["build/**"]
 
 `{answer.<key>}` in commands and artifacts is replaced by a value from the JSON object at the end of the agent's
 answer (shell-quoted in commands). Default gate: `commands_ok` and `artifacts_ok`, plus `clean_tree` when
-`require_clean_tree` is set. `artifact_kind` is `elf`, `wheel` or `zip`.
+`require_clean_tree` is set. Artifacts must be at least `artifact_min_bytes` (default 1024) and, with
+`artifact_kind`, structurally valid: `elf` (executable or shared object header), `zip`, or `wheel` (a valid archive
+with `*.dist-info/WHEEL`). Prefer commands that exercise the artifact, such as importing the built module.
 
 ### `mutation` — test writing
 
@@ -121,7 +125,9 @@ oracle_min_kill = 1.0
 
 Every non-test change is reverted, the agent's tests must pass on the real code, then each mutant is applied in
 turn. A mutant is **killed** when the tests fail, **survives** when they pass, and is **invalid** (excluded) when the
-code does not build. A pass needs `kill_rate >= min_kill`.
+code does not build or the tests time out (set `timeout_kills = true` to count timeouts as kills). A pass needs
+`kill_rate >= min_kill`. Tests that read source files, hashes or patches instead of exercising behaviour are flagged
+as `meta_testing`.
 
 The tests are taken from `targets` in the task, else from the agent's answer
 (`{"targets": ["tests/test_x.py"]}`, test files only), else from the test files the agent changed.
@@ -148,7 +154,8 @@ The agent's answer must end with a JSON array of findings:
 }
 ```
 
-A finding matches a seed when it names the same file and either its text matches the `kw` regular expression and
+Findings without a message earn no credit. A finding matches a seed when it names the same file and either its
+text matches the `kw` regular expression and
 its line is within `kw_line_tol` (15) lines, or its line is within `line_tol` (1) lines. Each finding counts for at
 most one seed; a finding matching several seeds counts only for the nearest. A seed with `"file": "*"` matches any
 file and requires the keyword.
@@ -221,10 +228,11 @@ min_speedup = 1.2
 targets = ["tests/test_core.py"]
 ```
 
-Correctness first: `targets` must pass. The starting revision and the agent's tree are then benchmarked alternately,
-each with its own tree on `PYTHONPATH`. The task passes when the lower bound of the 95% confidence interval of
-`median(base) / median(candidate)` is at least `min_speedup`. For compiled extensions, build in place
-(`build_ext --inplace`) rather than with an editable install.
+Correctness first: `targets` must pass. The starting revision and the agent's tree are then benchmarked in pairs, in
+random order within each pair, each with its own tree on `PYTHONPATH`. repoevals measures the wall-clock time of each
+run itself (set `trust_bench_output = true` to use the `{"seconds": …}` the benchmark prints instead). The task
+passes when the lower bound of the 95% confidence interval of the median per-pair speedup is at least `min_speedup`.
+For compiled extensions, build in place (`build_ext --inplace`) rather than with an editable install.
 
 Metrics: `speedup`, `speedup_ci`, `noise_cv_base`, and raw timings.
 

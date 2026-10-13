@@ -76,6 +76,9 @@ run_dir/
 └── events.jsonl      optional trace, one JSON object per line
 ```
 
+Graded runs also contain `grade.json`, `agent.diff` (the agent's changes) and `.repoevals/` (the protected history
+and task snapshot written by `prepare`).
+
 Create the workspace with `repoevals prepare <task> <run_dir>`, run your agent in `run_dir/workspace`, write
 `answer.txt` (and `events.jsonl`), then call `repoevals grade <run_dir>`. The result is written to
 `run_dir/grade.json`.
@@ -107,6 +110,8 @@ Create the workspace with `repoevals prepare <task> <run_dir>`, run your agent i
 ```
 
 ## Harbor export
+
+Experimental: the export does not yet build a workspace image for you.
 
 ```bash
 repoevals export harbor --out harbor-tasks/

@@ -22,13 +22,13 @@ Issues labelled `good first issue` are a good place to start.
 
 ## Development setup
 
-Requirements: Python 3.10+, git.
+Requirements: Linux or macOS (on Windows, use WSL2), Python 3.10+, git.
 
 ```bash
 git clone https://github.com/vchamarthi/repoevals.git
 cd repoevals
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 

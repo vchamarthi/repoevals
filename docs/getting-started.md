@@ -6,11 +6,13 @@ an agent and wire everything into CI.
 ## 1. Install
 
 ```bash
-pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.1.0"
+pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.2.0"
 repoevals --version
 ```
 
-Install repoevals in the same environment where your project's tests run: graders call your test command.
+Install repoevals in the same environment where your project's tests run: graders call your test command. Agents
+work in that environment too, so for builds that install into it (`pip install -e .`), run attempts one at a time,
+or use per-run environments or containers before using `--jobs`.
 
 ## 2. Configure
 
@@ -19,7 +21,8 @@ cd your-project
 repoevals init
 ```
 
-`init` creates `repoevals.toml` and an example task. The settings that matter most:
+`init` creates `repoevals.toml` and `.agent-evals/tasks/` (`init --preset dpnp` and friends start from a starter
+configuration). The settings that matter most:
 
 ```toml
 [repo]
@@ -37,19 +40,23 @@ build = "pip install -e . -q"              # how a tree becomes testable; empty 
 timeout_sec = 1800
 ```
 
-Every option is described in [Configuration](configuration.md).
+Every option is described in [Configuration](configuration.md). Then run `repoevals doctor`, optionally with a test
+target, to confirm git history, the test command and the agent CLIs work.
 
 ## 3. Write tasks
 
-Start with 10–20 tasks taken from your project's real history. In order of value per hour of effort:
+Start with 10–20 tasks taken from your project's real history. `repoevals author` automates most of the steps
+below, and an AI agent can do the whole procedure for you — see [Creating tasks](authoring.md). In order of value per
+hour of effort:
 
 ### Bug fixes from merged pull requests
 
-1. Pick a merged fix that came with a test.
-2. Set `base` to the fix's parent commit (`<fix-sha>^`).
-3. Copy the tests the fix added into `hidden/`, keeping their paths.
-4. Save the library part of the fix as `oracle.patch` (`git diff <fix-sha>^ <fix-sha> -- <library paths>`).
-5. Write `instruction.md` as the original bug report: the symptom, a reproducer and the expected behaviour. Do not
+1. Pick a merged fix that came with a test (`repoevals author mine`).
+2. Scaffold it: `repoevals author fix <fix-sha>`. This sets `base` to the fix's parent commit, copies the test files
+   the fix touched into `hidden/` (as of the fix; a modified test file replaces the agent's copy while grading), and
+   saves the rest of the fix as `oracle.patch`.
+3. Narrow `targets` to the tests that detect the bug, e.g. `tests/test_kmeans.py::test_empty_cluster_relocation`.
+4. Write `instruction.md` as the original bug report: the symptom, a reproducer and the expected behaviour. Do not
    describe the fix.
 
 ```toml
@@ -110,8 +117,8 @@ Good tasks:
 ## 5. Run agents
 
 ```bash
-repoevals run --agent claude-code --repeats 5
-repoevals report runs/<timestamp>
+repoevals run --agent claude-code --repeats 5     # prints the runs directory
+repoevals report <runs-dir>
 ```
 
 To measure whether your agent guidance (`AGENTS.md`, `CLAUDE.md`, Copilot instructions) helps, run the same tasks

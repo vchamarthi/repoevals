@@ -56,6 +56,8 @@ def from_claude_stream(lines: list[str]) -> tuple[list[dict], str]:
         except ValueError:
             continue
         typ = m.get("type")
+        if typ == "system" and m.get("subtype") == "init":
+            events.append({"kind": "session", "model": m.get("model", ""), "cwd": m.get("cwd", "")})
         if typ == "assistant":
             for c in m.get("message", {}).get("content", []) or []:
                 if c.get("type") == "tool_use":

@@ -1,14 +1,23 @@
-# Starter config for dmlc/xgboost (Intel CPU / SYCL plugin work).
+# Starter config for dmlc/xgboost (copy to the repository root as repoevals.toml).
+# Initialize submodules in your checkout first: git submodule update --init --recursive
 [repo]
 id = "xgboost"
 url = "https://github.com/dmlc/xgboost"
+
+[guidance]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".claude/**", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["tests/**"]
 library_globs = ["src/**", "plugin/**", "include/**", "python-package/xgboost/**"]
 
+[environment]
+submodules = true
+setup = "cmake -S . -B build -GNinja -DGOOGLE_TEST=ON -DPLUGIN_SYCL=OFF && cmake --build build -j4"
+setup_timeout_sec = 7200
+
 [test]
 adapter = "ctest"
-build = "cmake -S . -B build -GNinja -DGOOGLE_TEST=ON -DPLUGIN_SYCL=OFF && cmake --build build -j4"
+build = "cmake --build build -j4"
 command = "ctest --test-dir build --output-on-failure {targets}"
 timeout_sec = 3600

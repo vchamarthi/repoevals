@@ -28,6 +28,9 @@ from ..util import apply_patch, copytree_overlay, glob_match, last_json
 from . import GradeContext
 from .tests import TreeGuard
 
+META_TEST = re.compile(r"(hashlib|inspect\.getsource|getsourcefile|__code__\.co_code|dis\.|\.read_bytes\(|"
+                       r"open\([^)]*\.(py|pyx|c|cpp|h|hpp)['\"]|git\s+(diff|status|stash)|\.patch\b|mtime|"
+                       r"st_size|os\.stat\()")
 SAFE_TARGET = re.compile(r"^[\w./:\-\[\],=+@]+$")
 
 
@@ -61,7 +64,7 @@ def g_mutation(ctx: GradeContext) -> dict:
         lib_edits = [p for p in ch if not glob_match(p, ctx.config.test_globs)]
         out["library_reset"] = ctx.tree().restore(ctx.start_sha, sorted(lib_edits))
         adapter = ctx.adapter()
-        base = adapter.run(ws, targets)
+        base = adapter.run(ws, targets, changed=sorted(ch))
         out["baseline"] = base.summary()
         out["baseline_pass"] = base.ok
         if not base.ok:
@@ -72,17 +75,28 @@ def g_mutation(ctx: GradeContext) -> dict:
             ap = apply_patch(ws, m)
             if not ap.ok:  # library code is pristine here, so this is a defect of the task, not of the tests
                 raise RuntimeError(f"mutant {m.name} does not apply to the starting tree: {ap.out[:500]}")
-            r = adapter.run(ws, targets, build=bool(g.get("rebuild_per_mutant", True)))
+            touched = re.findall(r"^\+\+\+ b/(\S+)", m.read_text(), re.M)
+            r = adapter.run(ws, targets, build=bool(g.get("rebuild_per_mutant", True)), changed=touched)
             if r.status == "failed":
                 per[m.stem], killed = "killed", killed + 1
             elif r.status == "timeout":
-                per[m.stem], killed, timeouts = "killed_timeout", killed + 1, timeouts + 1
+                timeouts += 1
+                if g.get("timeout_kills", False):
+                    per[m.stem], killed = "killed_timeout", killed + 1
+                else:  # a test can be made to hang on any source change; not evidence of detecting the fault
+                    per[m.stem], invalid = "invalid:timeout", invalid + 1
             elif r.status == "passed":
                 per[m.stem], survived = "survived", survived + 1
             else:
                 per[m.stem], invalid = f"invalid:{r.status}", invalid + 1
             apply_patch(ws, m, reverse=True)
         valid = killed + survived
+        suspicious = []
+        for tgt in sorted({t.split("::")[0] for t in targets}):
+            f = ws / tgt
+            if f.is_file():
+                suspicious += [f"{tgt}: {m.group(0)}" for m in META_TEST.finditer(f.read_text(errors="replace"))]
+        out["meta_testing_suspect"] = suspicious[:20]
         out.update(mutants=per, killed=killed, survived=survived, invalid=invalid, timeouts=timeouts,
                    kill_rate=round(killed / valid, 3) if valid else None)
         out["pass"] = bool(valid) and killed / valid >= float(g.get("min_kill", 0.8))

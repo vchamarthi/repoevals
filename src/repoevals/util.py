@@ -30,41 +30,70 @@ class Proc:
         return self.rc == 0 and not self.timed_out
 
 
+SECRET_ENV = re.compile(r"(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIAL|_AUTH$|"
+                        r"^AWS_|^AZURE_|^GOOGLE_APPLICATION|^GH_|^GITHUB_TOKEN$|^ACTIONS_ID_TOKEN|^NPM_|^PYPI_|"
+                        r"^TWINE_|^SSH_AUTH_SOCK$)", re.I)
+MAX_OUTPUT = 20 * 1024 * 1024  # bytes of output kept in memory per command (the tail)
+
+
+def scrubbed_env(keep: Iterable[str] = ()) -> dict[str, str]:
+    """The current environment without credentials (names in `keep` are retained)."""
+    keep = set(keep)
+    return {k: v for k, v in os.environ.items() if k in keep or not SECRET_ENV.search(k)}
+
+
 def run(cmd: str | Sequence[str], cwd: Path | str | None = None, timeout: float | None = None,
-        env: Mapping[str, str] | None = None, stdin: str | None = None) -> Proc:
+        env: Mapping[str, str] | None = None, stdin: str | None = None, scrub: bool = False,
+        keep_env: Iterable[str] = (), output_file: Path | None = None) -> Proc:
     """Run a command, merging stderr into stdout. A string is split with shlex (no shell).
 
     The command gets its own process group; on timeout the whole group is killed, so background processes an agent
     or a test suite started cannot keep running (and editing the workspace) after the deadline.
     """
     import signal
+    import tempfile
     import time
 
     argv = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
-    full_env = {**os.environ, **(env or {})}
+    base_env = scrubbed_env(keep_env) if scrub else dict(os.environ)
+    full_env = {**base_env, **(env or {})}
     t0 = time.monotonic()
+    # output goes to a file, not a pipe: memory stays bounded however much a build or an agent prints
+    sink = open(output_file, "wb+") if output_file else tempfile.TemporaryFile()
     try:
-        proc = subprocess.Popen(argv, cwd=cwd, env=full_env, text=True, stdin=subprocess.PIPE if stdin is not None
-                                else subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                start_new_session=True, errors="replace")
-    except FileNotFoundError as e:
-        return Proc(127, str(e), seconds=time.monotonic() - t0)
-    try:
-        out, _ = proc.communicate(input=stdin, timeout=timeout)
-        return Proc(proc.returncode, out or "", seconds=time.monotonic() - t0)
-    except subprocess.TimeoutExpired:
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            proc.kill()
-        out, _ = proc.communicate()
-        return Proc(-1, out or "", timed_out=True, seconds=time.monotonic() - t0)
+            proc = subprocess.Popen(argv, cwd=cwd, env=full_env, stdin=subprocess.PIPE if stdin is not None
+                                    else subprocess.DEVNULL, stdout=sink, stderr=subprocess.STDOUT,
+                                    start_new_session=True)
+        except (FileNotFoundError, PermissionError) as e:
+            return Proc(127, str(e), seconds=time.monotonic() - t0)
+        timed_out = False
+        try:
+            proc.communicate(input=stdin.encode() if stdin is not None else None, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.communicate()
+        size = sink.seek(0, os.SEEK_END)
+        sink.seek(max(0, size - MAX_OUTPUT))
+        out = sink.read().decode("utf-8", errors="replace")
+        if size > MAX_OUTPUT:
+            out = f"[repoevals: {size - MAX_OUTPUT} earlier bytes of output omitted]\n" + out
+        return Proc(-1 if timed_out else proc.returncode, out, timed_out=timed_out, seconds=time.monotonic() - t0)
+    finally:
+        sink.close()
 
 
 def run_shell(cmd: str, cwd: Path | str | None = None, timeout: float | None = None,
               env: Mapping[str, str] | None = None) -> Proc:
-    """Run a repo-configured command line through bash (config commands may use pipes, &&, env vars)."""
-    return run(["bash", "-c", cmd], cwd=cwd, timeout=timeout, env=env)
+    """Run a repo-configured command line through bash (config commands may use pipes, &&, env vars).
+
+    Builds, tests and benchmarks execute code the agent wrote, so they never see credentials from the environment.
+    """
+    return run(["bash", "-c", cmd], cwd=cwd, timeout=timeout, env=env, scrub=True)
 
 
 def git(repo: Path | str, *args: str, check: bool = False, stdin: str | None = None) -> Proc:

@@ -29,10 +29,18 @@ command = "python -m pytest -q -p no:randomly {targets}"
 timeout_sec = 1800
 env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu", OMP_NUM_THREADS = "2" }
 
+rebuild_globs = ["*.pyx", "*.pxd", "*.cpp", "*.hpp", "CMakeLists.txt"]
+
 [environment]
+setup = "python scripts/build_locally.py"
+submodules = false
 image = "ghcr.io/your-org/agent-image:2026.10"
+network = "bridge"
+env_passthrough = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 dockerfile = ".agent-evals/Dockerfile"
-network = "none"
+
+[arms.terse]
+install = { "AGENTS.md" = "experiments/terse.md", "CLAUDE.md" = "experiments/terse.md" }
 
 [integrity]
 gate = false
@@ -78,6 +86,11 @@ Globs use `**` for any number of directories and `*` within one path segment.
 | `timeout_sec` | `1800` | time limit for a build or test run |
 | `env` | `{}` | environment variables for builds and tests |
 | `rc_map` | `{}` | `command` adapter only: map exit codes to statuses, e.g. `{ "0" = "passed", "1" = "failed", "2" = "build_error" }` |
+| `rebuild_globs` | `[]` | if set, `build` runs only when a changed file matches (e.g. compiled sources). Python-only changes then reuse the build from `[environment].setup` |
+
+Builds, tests and benchmarks run with credentials removed from the environment (variables whose names contain
+`TOKEN`, `SECRET`, `PASSWORD`, `API_KEY`, `CREDENTIAL`, and cloud-provider prefixes), because they execute code the
+agent wrote.
 
 Tasks can override `adapter`, `build`, `test_command` and `test_env` in their `[grader]` table.
 
@@ -96,9 +109,31 @@ Targets are always shell-quoted before they are substituted.
 
 | key | default | description |
 |---|---|---|
+| `setup` | `""` | shell command run in every fresh workspace before the agent starts, e.g. a native build. Output goes to `setup.log` in the run directory |
+| `setup_timeout_sec` | `7200` | time limit for `setup` |
+| `submodules` | `false` | materialize git submodules at the base revision (initialize them in the source checkout first) |
 | `image` | `""` | container image used by `repoevals run --docker` without an explicit image |
-| `network` | `"none"` | Docker network mode for agent containers |
+| `network` | `"bridge"` | Docker network mode for agent containers. Agents that call a model API need network access |
+| `env_passthrough` | API key variables for Anthropic, OpenAI and Gemini | environment variables passed to the agent (locally and in containers); all other credentials are removed |
 | `dockerfile` | `""` | Dockerfile copied into tasks exported with `repoevals export harbor` |
+
+Graders always run on the host, in the environment where repoevals is installed.
+
+## `[arms]`
+
+Named arms compare variants of your agent guidance. Use them with `repoevals run --arm <name>`.
+
+```toml
+[arms.terse]
+remove = ["**/AGENTS.md", "**/CLAUDE.md"]   # default: every [guidance].globs file
+install = { "AGENTS.md" = "experiments/terse.md", "CLAUDE.md" = "experiments/terse.md" }
+
+[arms.skills]
+overlay = "experiments/with-skills"          # directory copied onto the workspace, e.g. .claude/skills/...
+```
+
+Claude Code reads `CLAUDE.md`; Codex and most other agents read `AGENTS.md`. Install a variant under both names when
+comparing agents. The hash of every guidance file present in a workspace is recorded in its `meta.json`.
 
 ## `[integrity]`
 
@@ -111,3 +146,4 @@ Targets are always shell-quoted before they are substituted.
 | variable | description |
 |---|---|
 | `REPOEVALS_DEVICES` | comma-separated devices available on this host (default `cpu`). Tasks requiring other devices are skipped |
+| `REPOEVALS_RUNS_DIR` | default root for run directories (default `~/.cache/repoevals/runs`) |

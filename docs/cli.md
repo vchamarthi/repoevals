@@ -11,9 +11,15 @@ Task selection (`[tasks ...]`) accepts task ids, prefixes ending in `*`, `family
 
 ## Commands
 
-### `init`
+### `init [--preset NAME]`
 
-Create `repoevals.toml` and an example task in `.agent-evals/tasks/example_fix/`.
+Create `repoevals.toml` and an empty `.agent-evals/tasks/`. `--preset` starts from a starter configuration
+(`dpnp`, `dpctl`, `mkl_fft`, `mkl_random`, `mkl_umath`, `scikit-learn-intelex`, `xgboost`, `onedal`).
+
+### `doctor [tests ...]`
+
+Check the setup: configuration, git history, tasks, test adapter, agent CLIs, `gh`, Docker, and whether guidance files
+above the runs directory would leak into every arm. With test targets, also runs them on the current tree.
 
 ### `list [tasks ...]`
 
@@ -51,10 +57,28 @@ Prepare a workspace, run the agent, and grade, for every selected task × arm ×
 | `--docker [IMAGE]` | off | run the agent in a container; without a value, uses `[environment].image` |
 | `--agent-args` | | extra arguments for the agent CLI |
 | `--source` | config repository | repository to create workspaces from |
-| `--out` | `runs/<timestamp>` | output directory |
+| `--out` | `~/.cache/repoevals/runs/<repo>/<timestamp>` | output directory; `$REPOEVALS_RUNS_DIR` changes the default root. Must be outside the repository |
+| `--allow-out-in-repo` | off | allow `--out` inside the repository (agents could then read hidden material) |
+| `--include-drafts` | off | also run tasks with `status = "draft"` |
+| `--jobs` | `1` | attempts run in parallel. Builds and installs must not share mutable state (see [Configuration](configuration.md#environment)) |
+| `--resume` | off | keep attempts in `--out` that already have a grade (errors are redone) |
+| `--retries` | `2` | retries, with backoff, when the agent CLI fails for infrastructure reasons |
+| `--max-cost` | none | stop starting new attempts once reported cost reaches this many US dollars |
+| `--label` | none | recorded with every result and shown in reports, e.g. a release name |
+| `--shuffle`, `--seed` | off, `0` | randomize the order of attempts |
 
 In `cmd:` templates, `{prompt_file}`, `{workspace}` and `{model}` are substituted. The agent's standard output becomes
-its final answer.
+its final answer. `cmd:` agents produce no trace, so trace-based integrity checks do not apply to them; reports mark
+such configurations.
+
+Each attempt records an agent status: `ok`, `timeout` (graded as left), or `infra_error` (missing CLI,
+authentication, rate limit, overload, no output), which is retried and otherwise recorded as status `error`.
+`<out>/run.json` records the arguments, agent version, source revision, counts and cost of the whole run.
+
+With `--docker`, the workspace is mounted at the same path, the agent runs as your user, credentials named in
+`[environment].env_passthrough` are passed in, and the network mode is `[environment].network` (default `bridge`,
+because API-based agents must reach their model API). The image must contain the agent CLI, git and your project's
+toolchain.
 
 Arms:
 
@@ -62,12 +86,20 @@ Arms:
 |---|---|
 | `guidance:raw` | your guidance files as committed |
 | `guidance:none` | no guidance files |
-| `guidance:file=PATH` | only `PATH`, installed as `AGENTS.md` |
+| `guidance:file=PATH` | only `PATH`, installed as both `AGENTS.md` and `CLAUDE.md` |
+| `<name>` | as defined in `[arms.<name>]` (see [Configuration](configuration.md#arms)) |
 
-### `report RUNS [--out DIR]`
+### `report RUNS [--out DIR] [--fail-under RATE]`
 
 Aggregate every `grade.json` under `RUNS` into `summary.md`, `results.json` and `results.jsonl` (default
-`RUNS/report`). See [Reports and statistics](reports.md).
+`RUNS/report`). With `--fail-under`, exit 1 when any configuration's pass rate is below `RATE`. See
+[Reports and statistics](reports.md).
+
+### `show RUN_DIR [--diff] [--answer]`
+
+Summarize one attempt: configuration, agent status and time, result and metrics, failing tests with log tails,
+process data, integrity findings and the files the agent changed. `--diff` prints the agent's full diff
+(`agent.diff`), `--answer` its final message.
 
 ### `prepare TASK RUN_DIR [--arm ARM] [--source DIR]`
 
@@ -80,7 +112,25 @@ Grade a run directory and write `grade.json`. Use this with your own agent harne
 
 ### `export harbor [tasks ...] --out DIR`
 
-Write tasks in the Harbor task format. See [Extending](extending.md#harbor-export).
+Experimental. Write tasks in the Harbor task format. See [Extending](extending.md#harbor-export).
+
+### `author <subcommand>`
+
+Task authoring. Generated tasks are drafts (`status = "draft"`): `run` skips them unless `--include-drafts` is
+given, and `validate` warns about them. See [Creating tasks](authoring.md).
+
+| subcommand | description |
+|---|---|
+| `mine [--since DATE] [--limit N] [--top N] [--json FILE]` | rank commits that changed library code and tests together |
+| `fix COMMIT [--id ID] [--family fix\|feature] [--force]` | scaffold a hidden-tests task from a commit |
+| `review-replay PR [--repo OWNER/NAME] [--id ID] [--force]` | scaffold a review-replay task from a GitHub pull request (needs `gh`) |
+| `mutants TASK FILE [--function NAME] [--max N]` | generate mutant patches for a Python file; creates the test-writing task if needed |
+| `prune-mutants TASK` | remove mutants the task's reference tests do not detect |
+| `approve TASK...` | set `status = "ready"`; refuses tasks whose instruction is still the template |
+| `pin [TASK...]` | replace symbolic bases (`HEAD`, branch names) with full commit SHAs |
+| `playbook` | print the agent playbook |
+| `prompt --repo URL [--count N] [--families TEXT] [--workdir DIR]` | print a ready-to-use prompt for an agent |
+| `install [--no-claude] [--codex] [--codex-home DIR]` | install the playbook as a Claude Code skill and/or a Codex custom prompt |
 
 ### `guidance-lint [--strict]`
 
@@ -93,5 +143,8 @@ Report file paths mentioned in agent guidance files that do not exist in the rep
 | `validate` | no errors | errors, or no tasks found | |
 | `check` | every task valid | at least one task has a problem | |
 | `grade` | graded (pass or fail) | | not graded (error) |
+| `run` | the matrix ran (individual attempts may have failed or errored) | no tasks to run | usage error, or `--out` inside the repository |
+| `report` | report written | `--fail-under` not met | |
+| `doctor` | no blocking problem | a check failed | |
 | `guidance-lint` | always, unless `--strict` | `--strict` and missing paths | |
-| `run`, `report`, `export`, `list`, `prepare` | success | | usage error |
+| `export`, `list`, `prepare`, `show`, `author` | success | | usage error |

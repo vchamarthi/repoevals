@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "repoevals"
-version = "0.1.0"
+version = "0.2.0"
 description = "Repository-native evaluations for AI coding agents."
 readme = "README.md"
 license = "Apache-2.0"
@@ -52,3 +52,7 @@ extend-exclude = ["examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "I"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs/agent-playbook.md" = "repoevals/data/agent_playbook.md"
+"examples/starter-configs" = "repoevals/data/presets"

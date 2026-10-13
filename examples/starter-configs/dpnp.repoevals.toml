@@ -1,22 +1,28 @@
-# Starter config for IntelPython/dpnp (copy to the repo root as repoevals.toml).
+# Starter config for IntelPython/dpnp (copy to the repository root as repoevals.toml).
 [repo]
 id = "dpnp"
 url = "https://github.com/IntelPython/dpnp"
 tasks = ".agent-evals/tasks"
 
 [guidance]
-globs = ["**/AGENTS.md", "**/CLAUDE.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".claude/**", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["dpnp/tests/**", "dpnp/tensor/tests/**"]
 library_globs = ["dpnp/**"]
-# skip tables are a free source of hidden tests and an attack surface: always reset before grading
+# skip tables are both a source of hidden tests and a way to hide failures: always restore them
 protected_globs = ["dpnp/tests/skipped_tests*.tbl", "dpnp/tests/third_party/**"]
+
+[environment]
+# the full SYCL build takes tens of minutes: build once per workspace, before the agent starts
+setup = "python scripts/build_locally.py --verbose"
+setup_timeout_sec = 7200
 
 [test]
 adapter = "pytest"
-# full SYCL build is slow (tens of minutes cold); python-only tasks can set [grader].build = "" to reuse the base build
+# rebuild only when compiled sources change; Python-only changes reuse the setup build
 build = "python scripts/build_locally.py --verbose"
+rebuild_globs = ["**/*.cpp", "**/*.hpp", "**/*.h", "**/*.pyx", "**/*.pxd", "**/CMakeLists.txt", "**/*.cmake"]
 command = "python -m pytest -q -p no:randomly -m 'not slow' {targets}"
 timeout_sec = 3600
 env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu", OMP_NUM_THREADS = "2", SYCL_CACHE_PERSISTENT = "0" }

@@ -1,7 +1,7 @@
 # GitHub Action
 
 ```yaml
-- uses: vchamarthi/repoevals@v0.1.0
+- uses: vchamarthi/repoevals@v0.2.0
   with:
     command: check
 ```
@@ -22,7 +22,7 @@ before the action.
 | `agent` | `noop` | `run`: agent to use |
 | `model` | | `run`: model id |
 | `arms` | `guidance:raw` | `run`: space-separated arms |
-| `runs-dir` | `repoevals-runs` | `run` and `report`: output directory |
+| `runs-dir` | `repoevals-runs` | `run` and `report`: output directory; relative paths are placed under `$RUNNER_TEMP`, outside the checkout |
 | `python-version` | `3.12` | Python used to run repoevals |
 | `repoevals-version` | the action's version | pip requirement to install instead |
 
@@ -31,6 +31,7 @@ before the action.
 | output | description |
 |---|---|
 | `report` | path of `summary.md` (`run` and `report`) |
+| `runs-dir` | absolute path of the run directories (`run` and `report`) |
 
 Results of `check` and `report` are also written to the job summary.
 
@@ -56,10 +57,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: vchamarthi/repoevals@v0.1.0
+      - uses: vchamarthi/repoevals@v0.2.0
         with:
           command: validate
-      - uses: vchamarthi/repoevals@v0.1.0
+      - uses: vchamarthi/repoevals@v0.2.0
         with:
           command: guidance-lint
   check:
@@ -72,7 +73,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[test]"
-      - uses: vchamarthi/repoevals@v0.1.0
+      - uses: vchamarthi/repoevals@v0.2.0
         with:
           command: check
           repeats: "2"
@@ -98,7 +99,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: pip install -e ".[test]" && npm install -g @anthropic-ai/claude-code
-      - uses: vchamarthi/repoevals@v0.1.0
+      - uses: vchamarthi/repoevals@v0.2.0
         id: evals
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -110,7 +111,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: agent-evals
-          path: repoevals-runs/
+          path: ${{ steps.evals.outputs.runs-dir }}
 ```
 
 Never run agents on `pull_request_target` or with secrets exposed to untrusted pull requests.

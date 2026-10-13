@@ -62,8 +62,18 @@ class Adapter:
             return None
         return run_shell(self.cfg.build, cwd=ws, timeout=self.cfg.timeout_sec, env=self.cfg.env)
 
-    def run(self, ws: Path, targets: list[str], timeout: float | None = None, build: bool = True) -> TestResult:
-        if build:
+    def needs_build(self, changed: list[str] | None) -> bool:
+        """`[test].rebuild_globs` limits rebuilds to changes that need one (e.g. *.pyx, *.cpp). Unknown = build."""
+        if not self.cfg.build:
+            return False
+        if not self.cfg.rebuild_globs or changed is None:
+            return True
+        from ..util import glob_match
+        return any(glob_match(c, self.cfg.rebuild_globs) for c in changed)
+
+    def run(self, ws: Path, targets: list[str], timeout: float | None = None, build: bool = True,
+            changed: list[str] | None = None) -> TestResult:
+        if build and self.needs_build(changed):
             b = self.build(ws)
             if b is not None and not b.ok:
                 return TestResult("timeout" if b.timed_out else "build_error", rc=b.rc, seconds=b.seconds,

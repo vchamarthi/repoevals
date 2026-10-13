@@ -14,21 +14,25 @@ gets the same score.
 - **Your tasks, your code** — bug fixes, features, builds, code reviews, test writing, numerical accuracy and
   performance work, defined next to the code they exercise.
 - **Hidden answers** — hidden tests, reference solutions, mutants and review manifests stay outside the agent's
-  workspace, which contains no git history.
+  workspace, which contains no git history. Run directories live outside your repository, and `--docker` mounts
+  only the workspace into the agent's container.
 - **Deterministic grading** — test runs, mutation analysis, matching against known review findings, and numerical
   comparison against a trusted reference.
 - **Self-checking tasks** — `repoevals check` proves that every task fails when nothing is done and passes with the
   reference solution. It needs no model and no API key, so it is safe to run on every pull request.
-- **Cheating detection** — test tampering, git-history mining, network access and edits to protected files are
-  flagged on every graded run.
+- **Cheating detection** — test tampering, test-runner shadowing, git-history mining, reads of the source checkout and
+  edits to protected files are flagged on every graded run; graders never see your credentials.
 - **Comparisons you can trust** — repeated trials, pass@k, task-clustered confidence intervals and paired
   comparisons between configurations, with cost and token usage.
+- **Task authoring built in** — mine candidate tasks from your history, scaffold drafts from commits and pull
+  requests, generate mutants, or hand the whole procedure to Claude Code or Codex with the agent playbook.
 - **Any agent, any stack** — Claude Code, Codex, or any command-line agent; pytest, Bazel, CTest or any test command.
 
 ## Contents
 
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Generating tasks with an agent](#generating-tasks-with-an-agent)
 - [Concepts](#concepts)
 - [Task types](#task-types)
 - [Running agents](#running-agents)
@@ -41,10 +45,11 @@ gets the same score.
 
 ## Installation
 
-Requirements: Python 3.10 or newer, and git. repoevals has no runtime dependencies on Python 3.11+.
+Requirements: Linux or macOS (on Windows, use WSL2), Python 3.10 or newer, and git. repoevals has no runtime
+dependencies on Python 3.11+.
 
 ```bash
-pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.1.0"
+pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.2.0"
 ```
 
 Numerical tasks additionally need NumPy in the environment where your project's tests run.
@@ -61,8 +66,9 @@ cd your-project
 repoevals init
 ```
 
-This creates `repoevals.toml` and an example task in `.agent-evals/tasks/example_fix/`. Edit the config so it
-describes how your tests run:
+This creates `repoevals.toml` and an empty `.agent-evals/tasks/` directory. For a library with a starter
+configuration, use `repoevals init --preset <name>` (for example `dpnp`, `mkl_fft`, `scikit-learn-intelex`). Edit the
+config so it describes how your tests run, then check it with `repoevals doctor`:
 
 ```toml
 [repo]
@@ -78,16 +84,23 @@ adapter = "pytest"
 build = "pip install -e . -q"
 ```
 
-### 2. Write a task
+### 2. Create a task
+
+Find a past bug fix that came with a test and turn it into a draft task:
+
+```bash
+repoevals author mine                          # candidate commits, best first
+repoevals author fix <commit> --id fix_var_ddof
+```
 
 A task is a directory with a `task.toml`, the instruction the agent receives, and the material used to grade it.
-This bug-fix task re-introduces a bug with `setup.patch` and grades the fix with a test the agent never sees:
+This bug-fix task grades the fix with a test the agent never sees:
 
 ```
 .agent-evals/tasks/fix_var_ddof/
 ├── task.toml
 ├── instruction.md          # the bug report, as a user would write it
-├── setup.patch             # applied before the agent starts; its reverse is the reference fix
+├── oracle.patch            # the reference fix (or setup.patch, to inject a bug instead)
 └── hidden/
     └── tests/test_var_hidden.py
 ```
@@ -98,7 +111,7 @@ version = "1.0"
 
 [metadata]
 family = "fix"
-base = "HEAD"               # any git revision of your repository
+base = "3f2a91c0d4e5…"      # the commit before the fix (a full SHA)
 created = "2026-10-13"
 
 [grader]
@@ -106,6 +119,9 @@ type = "hidden_tests"
 targets = ["tests/test_var_hidden.py"]
 regression_targets = ["tests/test_basic.py"]
 ```
+
+Write `instruction.md` as the original bug report, without the fix. Drafts are approved with
+`repoevals author approve fix_var_ddof` once reviewed. See [Creating tasks](docs/authoring.md).
 
 ### 3. Validate and self-check
 
@@ -121,12 +137,37 @@ OK       fix_var_ddof: null=fail oracle=['pass']
 ### 4. Run an agent and read the report
 
 ```bash
-repoevals run --agent claude-code --repeats 5
-repoevals report runs/<timestamp>
+repoevals run --agent claude-code --repeats 5     # prints where the runs are written
+repoevals report <runs-dir>
+repoevals show <runs-dir>/fix_var_ddof/guidance_raw/r0
 ```
 
 A complete, runnable example repository with one task of each type is in
 [`examples/minisci`](examples/minisci).
+
+## Generating tasks with an agent
+
+Point Claude Code, Codex or another coding agent at your repository and the repoevals playbook; it configures
+repoevals, mines your history for good tasks, scaffolds and verifies them, and leaves them as drafts with a report
+for you to review.
+
+```bash
+# Claude Code
+claude "Create 12 repoevals tasks for https://github.com/your-org/your-project following \
+https://github.com/vchamarthi/repoevals/blob/main/docs/agent-playbook.md"
+
+# Codex
+codex "$(repoevals author prompt --repo https://github.com/your-org/your-project --count 12)"
+```
+
+Review the drafts and the generated `.agent-evals/AUTHORING_REPORT.md`, then approve:
+
+```bash
+repoevals author approve fix_kmeans_empty_cluster review_replay_pr3182
+```
+
+Prefer to do it yourself? `repoevals author mine` lists candidate commits and `repoevals author fix <commit>`
+scaffolds a task from one. See [Creating tasks](docs/authoring.md).
 
 ## Concepts
 
@@ -141,7 +182,8 @@ A complete, runnable example repository with one task of each type is in
 | **run directory** | Everything about one attempt: the workspace, the instruction, the agent's trace and answer, and `grade.json`. |
 
 Each graded run has a status: `pass`, `fail`, `skipped` (the host lacks required hardware), `scored` (a metric
-without a pass/fail gate), or `error` (infrastructure problem, not counted against the agent).
+without a pass/fail gate), or `error` (not graded: the agent CLI could not run — missing, unauthenticated or rate
+limited — or grading itself failed). Errors are excluded from pass rates and never counted against the agent.
 
 ## Task types
 
@@ -172,12 +214,21 @@ repoevals run --agent "cmd:my-agent --prompt-file {prompt_file}"
 # Compare your agent guidance against none, on the same tasks
 repoevals run --agent claude-code --arm guidance:raw --arm guidance:none --repeats 8
 
-# Run the agent inside a container with no network access
+# Run the agent in a container that sees only its workspace
 repoevals run --agent claude-code --docker ghcr.io/your-org/agent-image:latest
+
+# Larger runs: parallel attempts, resume after an interruption, a cost budget, a label for the report
+repoevals run --agent claude-code --repeats 8 --jobs 4 --resume --max-cost 50 --label release-0.19 \
+  --out ~/evals/dpnp-0.19
 ```
 
-Without `--docker`, the agent runs as a local process with your user's permissions. Use a container for untrusted
-tasks or agents.
+Runs are written outside your repository (default `~/.cache/repoevals/runs/<repo>/<timestamp>`). Agent
+infrastructure failures are retried and otherwise recorded as `error`; tasks needing hardware you lack are skipped
+before the agent starts.
+
+Without `--docker`, the agent runs as a local process with your user's permissions and could read files outside its
+workspace; integrity checks flag what they can see, but only a container is an isolation boundary. Use `--docker` for
+results you publish and for untrusted agents. See [Grading and integrity](docs/grading.md#isolation-and-threat-model).
 
 Already have your own agent harness? Produce a run directory and call `repoevals grade <run_dir>`. See
 [Run directories](docs/extending.md#run-directories).
@@ -188,11 +239,13 @@ Already have your own agent harness? Produce a run directory and call `repoevals
 
 | file | contents |
 |---|---|
-| `summary.md` | pass rate per configuration with 95% confidence intervals, paired comparisons, per-task pass@k, cost and tokens, runs with integrity flags |
+| `summary.md` | pass rate per configuration and per task family with 95% confidence intervals, paired comparisons, per-task pass@k, agent time, cost and tokens, task health, runs with integrity flags |
 | `results.json` | the same numbers, machine-readable |
 | `results.jsonl` | one row per graded run, ready for pandas or a database |
 
-Read the transcripts of flagged runs before relying on a number. See [Reports and statistics](docs/reports.md).
+Inspect any attempt with `repoevals show <run_dir> [--diff] [--answer]`. Read the transcripts of flagged runs before
+relying on a number. Use `repoevals report --fail-under 0.5` to fail a CI job when a pass rate drops. See
+[Reports and statistics](docs/reports.md).
 
 ## Continuous integration
 
@@ -212,7 +265,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: pip install -e .          # whatever makes your tests runnable
-      - uses: vchamarthi/repoevals@v0.1.0
+      - uses: vchamarthi/repoevals@v0.2.0
         with:
           command: check
 ```
@@ -225,6 +278,8 @@ scheduled workflow. See [GitHub Action](docs/github-action.md).
 | guide | |
 |---|---|
 | [Getting started](docs/getting-started.md) | adopt repoevals in an existing repository and write good first tasks |
+| [Creating tasks](docs/authoring.md) | mine history, scaffold drafts, generate mutants, review and approve |
+| [Agent playbook](docs/agent-playbook.md) | the procedure an AI agent follows to author tasks for a repository |
 | [Configuration](docs/configuration.md) | every `repoevals.toml` option and test adapter |
 | [Tasks](docs/tasks.md) | task directory layout, `task.toml` fields and grader options |
 | [Command line](docs/cli.md) | all commands, options and exit codes |

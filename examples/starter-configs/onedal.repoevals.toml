@@ -6,7 +6,7 @@ tasks = "dev/agent_evals/tasks"
 hide = ["dev/agent_evals/**"]   # eval tooling kept next to the tasks
 
 [guidance]
-globs = ["**/AGENTS.md", ".github/instructions/*.md", ".github/copilot-instructions.md"]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".claude/**", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["**/test/**", "**/*_test.cpp", "**/tests/**"]

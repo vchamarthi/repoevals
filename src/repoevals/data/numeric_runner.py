@@ -46,6 +46,16 @@ def to_numpy(np, x):
     return np.asarray(x)
 
 
+def public_probe(probe_path, dest):
+    """A copy of the probe without `reference` and `compare`, for the process that imports the code under test."""
+    import ast
+    tree = ast.parse(open(probe_path).read())
+    tree.body = [n for n in tree.body if not (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                             and n.name in ("reference", "compare"))]
+    with open(dest, "w") as fh:
+        fh.write(ast.unparse(tree))
+
+
 def produce(which, probe_path, out_path):
     import numpy as np
     probe = load_probe(probe_path)
@@ -144,6 +154,8 @@ def compare(probe_path, cand_path, ref_path, out_path, tol_json):
                          else default_compare(np, case, got, want, tol))
             except Exception as e:
                 r.update(ok=False, error=f"compare: {type(e).__name__}: {e}")
+        if not isinstance(r.get("ok"), bool):
+            r.update(ok=False, error=f"comparison returned non-boolean ok={r.get('ok')!r}")
         results.append(r)
     with open(out_path, "w") as fh:
         json.dump(results, fh, default=str)
@@ -151,7 +163,9 @@ def compare(probe_path, cand_path, ref_path, out_path, tol_json):
 
 def main():
     mode = sys.argv[1]
-    if mode in ("candidate", "reference"):
+    if mode == "public":
+        public_probe(sys.argv[2], sys.argv[3])
+    elif mode in ("candidate", "reference"):
         produce(mode, sys.argv[2], sys.argv[3])
     elif mode == "compare":
         compare(*sys.argv[2:7])

@@ -1,18 +1,23 @@
-# Starter config for IntelPython/mkl_umath (meson-python + mkl-devel).
+# Starter config for IntelPython/mkl_umath (meson-python and mkl-devel; copy to the repository root as repoevals.toml).
 [repo]
 id = "mkl_umath"
 url = "https://github.com/IntelPython/mkl_umath"
 
 [guidance]
-globs = ["**/AGENTS.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".claude/**", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["mkl_umath/tests/**"]
 library_globs = ["mkl_umath/**"]
 
+[environment]
+setup = "python -m pip install -e . --no-build-isolation -q"
+
 [test]
 adapter = "pytest"
+# meson-python editable installs rebuild on import; an explicit build is only needed for build-file changes
 build = "python -m pip install -e . --no-build-isolation -q"
+rebuild_globs = ["**/meson.build", "pyproject.toml", "**/*.src", "**/*.pyx", "**/*.pxd", "**/*.c", "**/*.h"]
 command = "python -m pytest -q -p no:randomly {targets}"
 timeout_sec = 1800
 env = { MKL_NUM_THREADS = "2", OMP_NUM_THREADS = "2" }

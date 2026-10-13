@@ -30,13 +30,28 @@ from ..util import apply_patch, copytree_overlay, glob_match, last_json, run_she
 from . import GradeContext, evaluate_gate
 
 
+def _special_files(directory: str, names: list[str]) -> list[str]:
+    """FIFOs, sockets and device files are skipped when snapshotting: copying a FIFO would block grading."""
+    import os
+    import stat
+    skip = []
+    for n in names:
+        try:
+            mode = os.lstat(os.path.join(directory, n)).st_mode
+        except OSError:
+            continue
+        if stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode) or stat.S_ISCHR(mode) or stat.S_ISBLK(mode):
+            skip.append(n)
+    return skip
+
+
 class TreeGuard:
     """Snapshot of the agent's final tree; restores it after grading mutated the workspace."""
 
     def __init__(self, ws: Path):
         self.ws = Path(ws).resolve()  # a symlinked workspace (e.g. Harbor's /workspace) is restored in place
         self.tmp = Path(tempfile.mkdtemp(prefix="repoevals-tree-"))
-        shutil.copytree(ws, self.tmp / "t", symlinks=True)
+        shutil.copytree(self.ws, self.tmp / "t", symlinks=True, ignore=_special_files)
 
     def restore(self) -> None:
         shutil.rmtree(self.ws)
@@ -86,7 +101,8 @@ def g_hidden_tests(ctx: GradeContext) -> dict:
         hidden = ctx.task.dir / g.get("hidden_dir", "hidden")
         out["hidden_files"] = copytree_overlay(hidden, ws) if hidden.is_dir() else []
         adapter = ctx.adapter()
-        res = adapter.run(ws, list(g.get("targets", [])), timeout=ctx.task.verifier.get("timeout_sec"))
+        res = adapter.run(ws, list(g.get("targets", [])), timeout=ctx.task.verifier.get("timeout_sec"),
+                          changed=sorted(set(ch) | set(out["hidden_files"])))
         out["tests"] = res.summary()
         # hidden tests must actually run: skipped hidden tests are not passes
         out["hidden_pass"] = res.ok and (res.skipped == 0 or bool(g.get("allow_hidden_skips", False)))
@@ -164,10 +180,7 @@ def g_command(ctx: GradeContext) -> dict:
             arts_ok = False
             continue
         for m in matches:
-            head = m.read_bytes()[:4]
-            kind = g.get("artifact_kind")
-            good = (kind is None or (kind == "elf" and head == b"\x7fELF")
-                    or (kind in ("wheel", "zip") and head[:2] == b"PK"))
+            good = artifact_ok(m, g.get("artifact_kind"), int(g.get("artifact_min_bytes", 1024)))
             arts_ok &= good
             found.append({"path": m.relative_to(ws).as_posix(), "size": m.stat().st_size, "kind_ok": good})
     out["artifacts"] = found
@@ -175,6 +188,30 @@ def g_command(ctx: GradeContext) -> dict:
     gate = ctx.task.gate or (["commands_ok", "artifacts_ok"] + (["clean_tree"] if g.get("require_clean_tree") else []))
     out["pass"] = evaluate_gate(out, gate)
     return out
+
+
+def artifact_ok(path: Path, kind: str | None, min_bytes: int = 1024) -> bool:
+    """Structural check of a build artifact, not just its first bytes."""
+    import struct
+    import zipfile
+    if path.stat().st_size < min_bytes:
+        return False
+    if kind is None:
+        return True
+    if kind == "elf":
+        head = path.read_bytes()[:64]
+        if len(head) < 52 or head[:4] != b"\x7fELF" or head[4] not in (1, 2) or head[5] not in (1, 2):
+            return False
+        e_type = struct.unpack(("<" if head[5] == 1 else ">") + "H", head[16:18])[0]
+        return e_type in (2, 3)  # executable or shared object
+    if kind in ("zip", "wheel"):
+        if not zipfile.is_zipfile(path):
+            return False
+        with zipfile.ZipFile(path) as z:
+            if z.testzip() is not None:
+                return False
+            return kind == "zip" or any(n.endswith(".dist-info/WHEEL") for n in z.namelist())
+    return False
 
 
 def o_command(ctx: GradeContext) -> str | None:

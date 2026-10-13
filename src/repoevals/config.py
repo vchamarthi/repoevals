@@ -26,7 +26,7 @@ repository's build and test tooling lives here, so graders stay generic.
     timeout_sec = 1800
     env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu" }
 
-    [environment]                         # where agents and graders run
+    [environment]                         # workspace setup and agent containers (graders run on the host)
     image = "ghcr.io/org/repo-agent-evals:2026.10"      # or dockerfile = "..."
     network = "none"
 
@@ -46,7 +46,11 @@ DEFAULT_TEST_GLOBS = ["tests/**", "test/**", "**/tests/**", "**/test_*.py", "**/
                       "**/test/*.cpp"]
 # test infrastructure the agent could use to skip or deselect tests without touching a test file; reset before
 # grading by hidden_tests and included in integrity checks
-TEST_INFRA_GLOBS = ["conftest.py", "**/conftest.py", "pytest.ini", "**/pytest.ini", "tox.ini", ".pytest.ini"]
+TEST_INFRA_GLOBS = ["conftest.py", "**/conftest.py", "pytest.ini", "**/pytest.ini", "tox.ini", ".pytest.ini",
+                    # modules that would shadow the test runner or hook interpreter start-up
+                    "pytest.py", "pytest/**", "_pytest/**", "py.py", "pluggy.py", "pluggy/**", "unittest.py",
+                    "unittest/**", "sitecustomize.py", "**/sitecustomize.py", "usercustomize.py",
+                    "**/usercustomize.py", "*.pth"]
 CONFIG_NAMES = ("repoevals.toml", ".agent-evals/repoevals.toml")
 
 
@@ -58,6 +62,7 @@ class TestConfig:
     timeout_sec: float = 1800
     env: dict[str, str] = field(default_factory=dict)
     rc_map: dict[str, str] = field(default_factory=dict)  # command adapter: {"0": "passed", "1": "failed"}
+    rebuild_globs: list[str] = field(default_factory=list)  # skip `build` when no changed file matches
 
 
 @dataclass
@@ -76,6 +81,7 @@ class RepoConfig:
     test: TestConfig = field(default_factory=TestConfig)
     environment: dict = field(default_factory=dict)
     integrity_gate: bool = False
+    arms: dict = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
     @property
@@ -129,8 +135,10 @@ def load_config(path: Path | None = None, root: Path | None = None) -> RepoConfi
         formatter=pol.get("formatter", ""),
         test=TestConfig(adapter=t.get("adapter", "pytest"), build=t.get("build", ""), command=t.get("command", ""),
                         timeout_sec=float(t.get("timeout_sec", 1800)), env=dict(t.get("env", {})),
-                        rc_map={str(k): v for k, v in t.get("rc_map", {}).items()}),
+                        rc_map={str(k): v for k, v in t.get("rc_map", {}).items()},
+                        rebuild_globs=list(t.get("rebuild_globs", []))),
         environment=data.get("environment", {}),
         integrity_gate=bool(data.get("integrity", {}).get("gate", False)),
+        arms=dict(data.get("arms", {})),
         raw=data,
     )

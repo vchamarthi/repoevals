@@ -119,6 +119,8 @@ def g_review_seeded(ctx: GradeContext) -> dict:
     cands = []
     for fi, f in enumerate(findings):
         mine = []
+        if len(f["text"].strip()) < 8:  # a finding must say something to earn credit
+            continue
         for s in seeds:
             same = s["file"] == "*" or f["file"] == norm_path(s["file"])
             if not same:
@@ -179,6 +181,8 @@ def g_review_replay(ctx: GradeContext) -> dict:
     tol = int(g.get("line_tol", 5))
     cands = []
     for fi, f in enumerate(findings):
+        if len(f["text"].strip()) < 8:
+            continue
         for ti, t in enumerate(threads):
             if f["file"] == norm_path(t.get("file")):
                 d = abs(f["line"] - int(t.get("line") or -10**6))

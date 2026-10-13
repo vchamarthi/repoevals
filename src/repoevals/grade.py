@@ -35,7 +35,9 @@ def split_result(g: dict) -> tuple[dict, dict]:
 
 def context(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> GradeContext:
     meta = json.loads((run_dir / "meta.json").read_text())
-    task = task or load_task(Path(meta["task_dir"]))
+    snapshot = run_dir / ".repoevals" / "tasks" / str(meta.get("task", ""))
+    # grade from the copy of the task taken at prepare time, so later edits to the task cannot change old results
+    task = task or load_task(snapshot if meta.get("task") and snapshot.is_dir() else Path(meta["task_dir"]))
     answer = run_dir / "answer.txt"
     backup = run_dir / ".repoevals" / "start.git"
     return GradeContext(run_dir=run_dir, workspace=(run_dir / "workspace").resolve(), task=task, config=cfg,
@@ -48,9 +50,15 @@ def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
     meta = json.loads((run_dir / "meta.json").read_text())
     out = {"schema": "repoevals.grade/v1", "task": meta.get("task"), "family": None, "grader": None,
            "arm": meta.get("arm"), "agent": meta.get("agent"), "model": meta.get("model"),
-           "repeat": meta.get("repeat"), "status": "error", "pass": None, "metrics": {}, "details": {},
-           "process": {}, "integrity": {}, "errors": [], "repoevals_version": __version__,
+           "label": meta.get("label"), "repeat": meta.get("repeat"), "status": "error", "pass": None,
+           "metrics": {}, "details": {}, "process": {}, "integrity": {}, "errors": [],
+           "agent_status": meta.get("agent_status"), "agent_seconds": meta.get("agent_seconds"),
+           "agent_version": meta.get("agent_version"), "base_sha": meta.get("base_sha"),
+           "task_hash": meta.get("task_hash"), "repoevals_version": __version__,
            "graded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if meta.get("agent_status") == "infra_error":  # the agent never really ran: not the agent's failure
+        out["errors"].append(f"agent infrastructure error: {meta.get('agent_reason') or 'unknown'}")
+        return _write(run_dir, out)
     try:
         ctx = context(run_dir, cfg, task)
         t = ctx.task
@@ -65,10 +73,19 @@ def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
         markers = [str(t.dir), ".agent-evals", "oracle.patch", "oracle_tests", "/hidden/", "mutants/"]
         tree = ctx.tree()
         ch = tree.changed(ctx.start_sha)
+        roots = sorted({str(Path(x).resolve()) for x in (meta.get("source"), str(cfg.root)) if x})
         out["integrity"] = integrity_check(tree, ctx.start_sha, ctx.events, ch, cfg.test_globs,
                                            cfg.protected_globs + list(t.grader.get("protected", [])), markers,
-                                           allow_history=bool(t.grader.get("allow_history", False)))
+                                           allow_history=bool(t.grader.get("allow_history", False)),
+                                           forbidden_roots=roots)
+        out["process"]["trace"] = "events" if ctx.events else ("none" if meta.get("agent") not in (None, "noop")
+                                                                else "n/a")
+        (run_dir / "agent.diff").write_text(tree.diff_text(ctx.start_sha))
         g = GRADERS[t.grader_type](ctx)
+        for ev in g.get("meta_testing_suspect") or []:
+            out["integrity"]["integrity_findings"].append({"check": "meta_testing", "violation": True,
+                                                           "evidence": ev})
+            out["integrity"]["integrity_ok"] = False
         out["metrics"], out["details"] = split_result(g)
         for k in t.gate:
             if isinstance(k, str) and k.isidentifier():
@@ -90,7 +107,9 @@ def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
 
 
 def _write(run_dir: Path, out: dict) -> dict:
-    (run_dir / "grade.json").write_text(json.dumps(out, indent=1, default=str))
+    tmp = run_dir / "grade.json.tmp"
+    tmp.write_text(json.dumps(out, indent=1, default=str))
+    tmp.replace(run_dir / "grade.json")  # atomic: a crash never leaves a half-written grade
     return out
 
 

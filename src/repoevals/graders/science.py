@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import random
+import shlex
 import shutil
 import statistics
 import tempfile
@@ -39,7 +40,8 @@ def _correctness(ctx: GradeContext, out: dict) -> bool:
     hidden = ctx.task.dir / ctx.g.get("hidden_dir", "hidden")
     if hidden.is_dir():
         out["hidden_files"] = copytree_overlay(hidden, ctx.workspace)
-    built = adapter.build(ctx.workspace)
+    changed = sorted(ctx.tree().changed(ctx.start_sha)) + list(out.get("hidden_files", []))
+    built = adapter.build(ctx.workspace) if adapter.needs_build(changed) else None
     if built is not None and not built.ok:
         out["build_ok"] = False
         out["build_log_tail"] = built.out[-3000:]
@@ -69,30 +71,36 @@ def g_numeric(ctx: GradeContext) -> dict:
     py = g.get("python", "python")
     timeout = ctx.task.verifier.get("timeout_sec", 1800)
     probe = ctx.task.dir / g.get("probe", "probe.py")
+    q = shlex.quote
     guard = TreeGuard(ws)
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as cand_dir:
         cand, ref, res_path = Path(td) / "cand.npz", Path(td) / "ref.npz", Path(td) / "numeric.json"
+        public = Path(cand_dir) / "probe_public.py"
+        pp = run_shell(f"{py} -I {q(str(RUNNER))} public {q(str(probe))} {q(str(public))}", cwd=td, timeout=120)
+        if not public.exists():
+            raise RuntimeError(f"cannot prepare the probe: {pp.out[-2000:]}")
         try:
             tests_ok = _correctness(ctx, out)
-            # 1. candidate: the agent's code, in its own process
-            p = run_shell(f"{py} {RUNNER} candidate {probe} {cand}", cwd=ws, timeout=timeout, env=_ws_env(ctx, ws))
+            # 1. candidate: the agent's code, in its own process, seeing only CASES and candidate()
+            p = run_shell(f"{py} {q(str(RUNNER))} candidate {q(str(public))} {q(str(cand))}", cwd=ws,
+                          timeout=timeout, env=_ws_env(ctx, ws))
             out["candidate_rc"] = p.rc
             if not cand.exists() or not Path(str(cand) + ".errors.json").exists():
                 out["candidate_log_tail"] = p.out[-3000:]
         finally:
             guard.restore()
         # 2. reference, 3. comparison: trusted code only, not run from the workspace and without it on the path
-        r = run_shell(f"{py} -I {RUNNER} reference {probe} {ref}", cwd=td, timeout=timeout)
+        r = run_shell(f"{py} -I {q(str(RUNNER))} reference {q(str(probe))} {q(str(ref))}", cwd=td, timeout=timeout)
         if not ref.exists():
             raise RuntimeError(f"numeric reference failed (rc={r.rc}): {r.out[-3000:]}")
         cand_arg = str(cand) if cand.exists() and Path(str(cand) + ".errors.json").exists() else "-"
         tol = json.dumps(g.get("tolerances", {}))
-        c = run_shell(f"{py} -I {RUNNER} compare {probe} {cand_arg} {ref} {res_path} '{tol}'", cwd=td,
-                      timeout=timeout)
+        c = run_shell(f"{py} -I {q(str(RUNNER))} compare {q(str(probe))} {q(cand_arg)} {q(str(ref))} "
+                      f"{q(str(res_path))} {q(tol)}", cwd=td, timeout=timeout)
         if not res_path.exists():
             raise RuntimeError(f"numeric comparison failed (rc={c.rc}): {c.out[-3000:]}")
         cases = json.loads(res_path.read_text())
-    n_ok = sum(bool(c.get("ok")) for c in cases)
+    n_ok = sum(c.get("ok") is True for c in cases)
     out.update(cases=cases, n_cases=len(cases), n_cases_ok=n_ok,
                case_pass_rate=round(n_ok / len(cases), 3) if cases else None,
                max_ulp=max((c.get("max_ulp") or 0 for c in cases), default=0),
@@ -101,17 +109,22 @@ def g_numeric(ctx: GradeContext) -> dict:
     return out
 
 
-def _time(cmd: str, cwd: Path, env: dict, timeout: float) -> float | None:
+def _time(cmd: str, cwd: Path, env: dict, timeout: float, trust_output: bool = False) -> float | None:
+    """Wall-clock seconds of one benchmark run, measured here (the benchmark imports the code under test, so its
+    own output cannot be trusted unless the task says so)."""
+    import math
     p = run_shell(cmd, cwd=cwd, timeout=timeout, env=env)
     if not p.ok:
         return None
-    for line in reversed(p.out.strip().splitlines()):
-        try:
-            v = json.loads(line)
-            if isinstance(v, dict) and "seconds" in v:
-                return float(v["seconds"])
-        except ValueError:
-            continue
+    if trust_output:
+        for line in reversed(p.out.strip().splitlines()):
+            try:
+                v = json.loads(line)
+                if isinstance(v, dict) and isinstance(v.get("seconds"), (int, float)) and \
+                        math.isfinite(v["seconds"]) and v["seconds"] > 0:
+                    return float(v["seconds"])
+            except ValueError:
+                continue
     return p.seconds
 
 
@@ -126,12 +139,12 @@ def export_tree(gitdir: Path, rev: str, dest: Path) -> None:
                 raise RuntimeError(f"git {args[0]} failed: {p.out[:500]}")
 
 
-def bootstrap_ratio_ci(base: list[float], cand: list[float], n: int = 2000, alpha: float = 0.05,
+def bootstrap_ratio_ci(ratios: list[float], n: int = 2000, alpha: float = 0.05,
                        seed: int = 0) -> tuple[float, float]:
+    """CI of the median of paired base/candidate ratios (each pair measured back to back)."""
     rng = random.Random(seed)
-    ratios = sorted(statistics.median(rng.choices(base, k=len(base))) /
-                    statistics.median(rng.choices(cand, k=len(cand))) for _ in range(n))
-    return ratios[int(n * alpha / 2)], ratios[int(n * (1 - alpha / 2)) - 1]
+    meds = sorted(statistics.median(rng.choices(ratios, k=len(ratios))) for _ in range(n))
+    return meds[int(n * alpha / 2)], meds[int(n * (1 - alpha / 2)) - 1]
 
 
 def g_perf(ctx: GradeContext) -> dict:
@@ -159,19 +172,32 @@ def g_perf(ctx: GradeContext) -> dict:
             bench = bench.replace(bench.split()[-1], str(bench_path))
         timeout = float(g.get("bench_timeout_sec", 600))
         envs = {bt: _ws_env(ctx, bt), ws: _ws_env(ctx, ws)}
-        base_t, cand_t = [], []
+        trust = bool(g.get("trust_bench_output", False))
+        base_t, cand_t, ratios = [], [], []
         for _ in range(int(g.get("warmup", 1))):
-            _time(bench, bt, envs[bt], timeout), _time(bench, ws, envs[ws], timeout)
+            _time(bench, bt, envs[bt], timeout, trust), _time(bench, ws, envs[ws], timeout, trust)
+        order = random.Random(int(g.get("seed", 0)))
+        failed_candidate = 0
         for _ in range(int(g.get("repeats", 7))):
-            for tree, acc in ((bt, base_t), (ws, cand_t)):
-                v = _time(bench, tree, envs[tree], timeout)
-                if v is not None:
-                    acc.append(v)
-        if len(base_t) < 3 or len(cand_t) < 3:
-            raise RuntimeError(f"benchmark failed too often (base {len(base_t)}, candidate {len(cand_t)} runs)")
-        lo, hi = bootstrap_ratio_ci(base_t, cand_t)
+            trees = [bt, ws]
+            order.shuffle(trees)  # alternate which tree runs first, so order effects average out
+            got = {tree: _time(bench, tree, envs[tree], timeout, trust) for tree in trees}
+            if got[ws] is None:
+                failed_candidate += 1
+            if got[bt] is None or got[ws] is None:
+                continue
+            base_t.append(got[bt])
+            cand_t.append(got[ws])
+            ratios.append(got[bt] / got[ws])
+        if len(ratios) < 3:
+            if failed_candidate:  # the agent's code breaks the benchmark: a failure, not an infrastructure error
+                out.update(candidate_bench_failures=failed_candidate)
+                out["pass"] = False
+                return out
+            raise RuntimeError(f"benchmark failed too often ({len(ratios)} complete pairs)")
+        lo, hi = bootstrap_ratio_ci(ratios)
         out.update(base_seconds=base_t, candidate_seconds=cand_t,
-                   speedup=round(statistics.median(base_t) / statistics.median(cand_t), 3),
+                   speedup=round(statistics.median(ratios), 3),
                    speedup_ci=[round(lo, 3), round(hi, 3)],
                    noise_cv_base=round(statistics.pstdev(base_t) / statistics.mean(base_t), 3))
         out["pass"] = lo >= float(g.get("min_speedup", 1.1))

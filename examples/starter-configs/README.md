@@ -1,19 +1,22 @@
 # Starter configurations
 
-Ready-to-adapt `repoevals.toml` files for scientific Python and C++ libraries. Copy the file for your project to the
-repository root as `repoevals.toml`, adjust the build command to your environment, and add tasks under
-`.agent-evals/tasks/`.
+Ready-to-adapt `repoevals.toml` files for scientific Python and C++ libraries. Start from one with
+`repoevals init --preset <name>` (or copy the file to your repository root as `repoevals.toml`), adjust the build
+commands to your environment, run `repoevals doctor`, and add tasks under `.agent-evals/tasks/`.
 
-| file | project | test adapter | notes |
+Each configuration builds the project once per workspace (`[environment].setup`) before the agent starts, and
+rebuilds while grading only when compiled sources change (`[test].rebuild_globs`).
+
+| preset | project | test adapter | notes |
 |---|---|---|---|
-| [dpnp.repoevals.toml](dpnp.repoevals.toml) | IntelPython/dpnp | pytest | SYCL CPU device via the OpenCL CPU runtime; skip tables are protected |
-| [dpctl.repoevals.toml](dpctl.repoevals.toml) | IntelPython/dpctl | pytest | SYCL CPU device via the OpenCL CPU runtime |
-| [mkl_fft.repoevals.toml](mkl_fft.repoevals.toml) | IntelPython/mkl_fft | pytest | meson-python build with `mkl-devel` |
-| [mkl_random.repoevals.toml](mkl_random.repoevals.toml) | IntelPython/mkl_random | pytest | meson-python build with `mkl-devel` |
-| [mkl_umath.repoevals.toml](mkl_umath.repoevals.toml) | IntelPython/mkl_umath | pytest | meson-python build with `mkl-devel` |
-| [scikit-learn-intelex.repoevals.toml](scikit-learn-intelex.repoevals.toml) | uxlfoundation/scikit-learn-intelex | pytest | CPU-only build (`NO_DPC=1`); `deselected_tests.yaml` is protected |
-| [xgboost.repoevals.toml](xgboost.repoevals.toml) | dmlc/xgboost | ctest | C++ unit tests through CTest |
-| [onedal.repoevals.toml](onedal.repoevals.toml) | uxlfoundation/oneDAL | bazel | Bazel test targets |
+| [`dpnp`](dpnp.repoevals.toml) | IntelPython/dpnp | pytest | SYCL CPU device via the OpenCL CPU runtime; skip tables are protected |
+| [`dpctl`](dpctl.repoevals.toml) | IntelPython/dpctl | pytest | SYCL CPU device via the OpenCL CPU runtime |
+| [`mkl_fft`](mkl_fft.repoevals.toml) | IntelPython/mkl_fft | pytest | meson-python build with `mkl-devel` |
+| [`mkl_random`](mkl_random.repoevals.toml) | IntelPython/mkl_random | pytest | meson-python build with `mkl-devel` |
+| [`mkl_umath`](mkl_umath.repoevals.toml) | IntelPython/mkl_umath | pytest | meson-python build with `mkl-devel` |
+| [`scikit-learn-intelex`](scikit-learn-intelex.repoevals.toml) | uxlfoundation/scikit-learn-intelex | pytest | CPU-only build (`NO_DPC=1`); `deselected_tests.yaml` is protected |
+| [`xgboost`](xgboost.repoevals.toml) | dmlc/xgboost | ctest | C++ unit tests through CTest; initialize git submodules in your checkout first |
+| [`onedal`](onedal.repoevals.toml) | uxlfoundation/oneDAL | bazel | Bazel test targets |
 
 ## Hardware-specific tasks
 

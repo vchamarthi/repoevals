@@ -4,23 +4,38 @@ Built-in agents:
   claude-code   Claude Code CLI, headless:  claude -p --output-format stream-json --verbose
   codex         OpenAI Codex CLI, headless: codex exec --json
   noop          does nothing (the do-nothing baseline every benchmark should report)
-  oracle        applies the task's reference solution (used by `repoevals check`)
   cmd:<template>  any CLI; {prompt_file} {workspace} {model} are substituted, stdout becomes the answer
 
-Isolation: `--docker IMAGE` runs the agent in `docker run --network none` with only the workspace mounted.
-Without it, the agent runs as a local subprocess in the workspace — fine for trusted local experiments,
-not for CI on untrusted code.
+Every attempt gets an `agent_status`:
+  ok           the agent ran to completion (its result is graded)
+  timeout      the agent hit its time limit (graded: whatever it left is the result)
+  infra_error  the agent could not run: CLI missing, authentication, rate limit, overload, API outage.
+               Not the agent's fault: the attempt is retried (`run --retries`) and otherwise recorded as `error`.
+
+Containers (`--docker IMAGE`): the workspace is mounted at the same absolute path, the agent runs as the host user,
+API credentials listed in `[environment].env_passthrough` are passed in, and the network mode comes from
+`[environment].network` (default "bridge": API agents need to reach their model API).
 """
 from __future__ import annotations
 
-import json
+import os
+import re
 import shlex
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .trace import CONVERTERS, write_events
 from .util import fmt, run
+
+DEFAULT_PASSTHROUGH = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY",
+                       "OPENAI_BASE_URL", "GEMINI_API_KEY"]
+INFRA_PATTERNS = re.compile(
+    r"(rate[ _-]?limit|429|overloaded|529|authenticat|unauthori[sz]ed|401\b|invalid api key|api key|credit balance|"
+    r"quota|insufficient_quota|service unavailable|503\b|502\b|connection (refused|reset|error)|ENOTFOUND|"
+    r"ECONNRESET|not logged in|please run .*login|command not found|No such file or directory: '(claude|codex)')",
+    re.I)
+VERSION_ARGS = {"claude-code": ["claude", "--version"], "codex": ["codex", "--version"]}
 
 
 @dataclass
@@ -29,27 +44,65 @@ class AgentResult:
     seconds: float
     timed_out: bool
     answer: str
+    status: str = "ok"
+    reason: str = ""
+    model_resolved: str = ""
+    extra: dict = field(default_factory=dict)
 
 
-def _docker_wrap(argv: list[str], ws: Path, image: str, network: str = "none", env: dict | None = None,
-                 name: str = "") -> list[str]:
-    cmd = ["docker", "run", "--rm", "-i", f"--network={network}", "-v", f"{ws.resolve()}:/workspace",
-           "-w", "/workspace"] + (["--name", name] if name else [])
-    for k, v in (env or {}).items():
-        cmd += ["-e", f"{k}={v}"]
+def agent_version(agent: str) -> str:
+    argv = VERSION_ARGS.get(agent)
+    if not argv:
+        return ""
+    p = run(argv, timeout=30)
+    return p.out.strip().splitlines()[0][:100] if p.rc == 0 and p.out.strip() else ""
+
+
+def classify(rc: int, timed_out: bool, out: str, answer: str, events: list[dict],
+             traced: bool = True) -> tuple[str, str]:
+    """(agent_status, reason) from the CLI's exit code, output and trace."""
+    if timed_out:
+        return "timeout", "time limit reached"
+    if rc == 127:
+        return "infra_error", "agent CLI not found"
+    if not traced:  # cmd: agents may legitimately work silently; only clear CLI failures count
+        m = INFRA_PATTERNS.search(out[-4000:]) if rc != 0 else None
+        return ("infra_error", f"agent CLI reported: {m.group(0)}") if m else ("ok", "")
+    acted = any(e.get("kind") in ("command", "edit", "read", "search") for e in events)
+    if rc != 0 or (not answer.strip() and not acted):
+        tail = out[-4000:]
+        m = INFRA_PATTERNS.search(tail)
+        if m and not acted:
+            return "infra_error", f"agent CLI reported: {m.group(0)}"
+        if not acted and not answer.strip():
+            return "infra_error", f"agent produced no output (rc={rc})"
+    return "ok", ""
+
+
+def _docker_wrap(argv: list[str], ws: Path, image: str, network: str, env_names: list[str], name: str,
+                 extra_mounts: list[Path]) -> list[str]:
+    ws = ws.resolve()
+    cmd = ["docker", "run", "--rm", "-i", f"--network={network}", "--name", name, "-v", f"{ws}:{ws}", "-w", str(ws)]
+    for p in extra_mounts:
+        cmd += ["-v", f"{p.resolve()}:{p.resolve()}:ro"]
+    if hasattr(os, "getuid"):
+        cmd += ["--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp"]
+    for k in env_names:
+        if k in os.environ:
+            cmd += ["-e", k]  # value taken from the host environment, never written to the command line
     return cmd + [image] + argv
 
 
 def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600, docker: str = "",
-              network: str = "none", extra_args: str = "", env: dict | None = None) -> AgentResult:
+              network: str = "bridge", extra_args: str = "", env: dict | None = None,
+              env_passthrough: list[str] | None = None) -> AgentResult:
     ws = run_dir / "workspace"
-    prompt = (run_dir / "instruction.md").read_text()
+    prompt_file = run_dir / "instruction.md"
+    prompt = prompt_file.read_text()
     if agent == "noop":
         (run_dir / "answer.txt").write_text("")
         write_events(run_dir, [])
         return AgentResult(0, 0.0, False, "")
-    if agent == "oracle":
-        raise ValueError("the oracle agent is applied by `repoevals check`, not run_agent")
     converter = None
     if agent == "claude-code":
         argv = ["claude", "-p", "--output-format", "stream-json", "--verbose",
@@ -60,8 +113,8 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
                (["-m", model] if model else []) + ["-"]
         converter = "codex"
     elif agent.startswith("cmd:"):
-        pf = run_dir / "instruction.md"
-        argv = shlex.split(fmt(agent[4:], prompt_file=str(pf.resolve()), workspace=str(ws.resolve()), model=model))
+        argv = shlex.split(fmt(agent[4:], prompt_file=str(prompt_file.resolve()), workspace=str(ws.resolve()),
+                               model=model))
     else:
         raise ValueError(f"unknown agent {agent!r}: claude-code | codex | noop | cmd:<template>")
     argv += shlex.split(extra_args)
@@ -69,31 +122,30 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
     if docker:
         import uuid
         container = f"repoevals-{uuid.uuid4().hex[:12]}"
-        argv = _docker_wrap(argv, ws, docker, network, env, container)
+        argv = _docker_wrap(argv, ws, docker, network, list(env_passthrough or DEFAULT_PASSTHROUGH), container,
+                            [prompt_file])
     t0 = time.time()
-    p = run(argv, cwd=ws, timeout=timeout, env=env, stdin=prompt)  # kills the whole process group on timeout
+    log = run_dir / "agent_stdout.log"
+    # credentials are removed from the agent's environment except those it needs to reach its model API
+    p = run(argv, cwd=ws, timeout=timeout, env=env, stdin=prompt, scrub=True,
+            keep_env=list(env_passthrough or DEFAULT_PASSTHROUGH) + ["HOME", "PATH"], output_file=log)
     if container and p.timed_out:  # the container outlives a killed `docker run` client
         run(["docker", "kill", container])
-    (run_dir / "agent_stdout.log").write_text(p.out)
     if converter:
-        events, answer = CONVERTERS[converter](p.out.splitlines())
+        with open(log, errors="replace") as fh:
+            events, answer = CONVERTERS[converter](fh.read().splitlines())
     else:
         events, answer = [], p.out
     write_events(run_dir, events)
     (run_dir / "answer.txt").write_text(answer or "")
-    return AgentResult(p.rc, round(time.time() - t0, 2), p.timed_out, answer or "")
+    status, reason = classify(p.rc, p.timed_out, p.out, answer or "", events, traced=converter is not None)
+    model_resolved = next((e.get("model", "") for e in events if e.get("kind") == "session" and e.get("model")), "")
+    return AgentResult(p.rc, round(time.time() - t0, 2), p.timed_out, answer or "", status, reason, model_resolved)
 
 
-def record(run_dir: Path, agent: str, model: str, res: AgentResult) -> None:
+def record(run_dir: Path, agent: str, model: str, res: AgentResult, attempts: int = 1, version: str = "") -> None:
     from .workspace import update_meta
-    update_meta(run_dir, agent=agent, model=model or None, agent_rc=res.rc, agent_seconds=res.seconds,
-                agent_timed_out=res.timed_out)
-
-
-def load_answer(run_dir: Path) -> str:
-    p = run_dir / "answer.txt"
-    return p.read_text() if p.exists() else ""
-
-
-def dump(obj) -> str:
-    return json.dumps(obj, indent=1, default=str)
+    update_meta(run_dir, agent=agent, model=model or res.model_resolved or None, model_resolved=res.model_resolved
+                or None, agent_version=version or None, agent_rc=res.rc, agent_seconds=res.seconds,
+                agent_timed_out=res.timed_out, agent_status=res.status, agent_reason=res.reason or None,
+                agent_attempts=attempts)

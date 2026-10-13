@@ -1,15 +1,23 @@
-# Starter config for IntelPython/dpctl.
+# Starter config for IntelPython/dpctl (copy to the repository root as repoevals.toml).
 [repo]
 id = "dpctl"
 url = "https://github.com/IntelPython/dpctl"
+
+[guidance]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".claude/**", ".github/copilot-instructions.md", ".github/instructions/*.md"]
 
 [policy]
 test_globs = ["dpctl/tests/**", "libsyclinterface/tests/**"]
 library_globs = ["dpctl/**", "libsyclinterface/**"]
 
+[environment]
+setup = "python scripts/build_locally.py --verbose"
+setup_timeout_sec = 7200
+
 [test]
 adapter = "pytest"
 build = "python scripts/build_locally.py --verbose"
+rebuild_globs = ["**/*.cpp", "**/*.hpp", "**/*.h", "**/*.pyx", "**/*.pxd", "**/CMakeLists.txt", "**/*.cmake"]
 command = "python -m pytest -q -p no:randomly {targets}"
 timeout_sec = 3600
 env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu" }

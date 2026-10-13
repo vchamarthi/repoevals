@@ -1,5 +1,5 @@
 name: repoevals
-description: Validate, self-check, run and report deterministic AI-coding-agent evals defined in your repository.
+description: Repository-native evaluations for AI coding agents. Validate, self-check, run and report tasks defined in your repository.
 author: vchamarthi
 branding:
   icon: check-square
@@ -10,13 +10,13 @@ inputs:
     description: "validate | check | run | report | guidance-lint"
     default: check
   tasks:
-    description: Space-separated task ids / prefixes (id*) / family:<f> / tag:<t>. Empty = all tasks.
+    description: "Space-separated task ids, prefixes (id*), family:<f> or tag:<t>. Empty: all tasks."
     default: ""
   changed-only:
     description: "check: only tasks whose directory changed relative to the PR base (falls back to all)"
     default: "true"
   config:
-    description: Path to repoevals.toml (default: search from the repository root)
+    description: "Path to repoevals.toml (default: search from the repository root)"
     default: ""
   repeats:
     description: "check: oracle repeats (flakiness). run: repeats per task and arm."
@@ -31,7 +31,7 @@ inputs:
     description: "run: space-separated arms, e.g. 'guidance:raw guidance:none'"
     default: "guidance:raw"
   runs-dir:
-    description: "run/report: directory for run outputs"
+    description: "run/report: directory for run outputs (relative paths are placed under $RUNNER_TEMP)"
     default: repoevals-runs
   python-version:
     description: Python used to run repoevals itself
@@ -44,6 +44,9 @@ outputs:
   report:
     description: Path of the Markdown report (run/report)
     value: ${{ steps.main.outputs.report }}
+  runs-dir:
+    description: Absolute path of the run directories (run/report)
+    value: ${{ steps.main.outputs.runs-dir }}
 
 runs:
   using: composite
@@ -53,11 +56,14 @@ runs:
         python-version: ${{ inputs.python-version }}
     - name: Install repoevals
       shell: bash
+      env:
+        RE_VERSION: ${{ inputs.repoevals-version }}
+        RE_ACTION_PATH: ${{ github.action_path }}
       run: |
-        if [ -n "${{ inputs.repoevals-version }}" ]; then
-          python -m pip install -q "${{ inputs.repoevals-version }}"
+        if [ -n "$RE_VERSION" ]; then
+          python -m pip install -q "$RE_VERSION"
         else
-          python -m pip install -q "${{ github.action_path }}"
+          python -m pip install -q "$RE_ACTION_PATH"
         fi
     - name: repoevals ${{ inputs.command }}
       id: main
@@ -75,21 +81,28 @@ runs:
         RE_BASE: ${{ github.event.pull_request.base.sha }}
       run: |
         set -euo pipefail
+        set -f   # task selections such as fix_* are patterns for repoevals, not for the shell
+        case "$RE_RUNS" in /*) ;; *) RE_RUNS="$RUNNER_TEMP/$RE_RUNS" ;; esac   # never inside the checkout
+        echo "runs-dir=$RE_RUNS" >> "$GITHUB_OUTPUT"
         cfg=()
         [ -n "$RE_CONFIG" ] && cfg=(--config "$RE_CONFIG")
-        tasks=($RE_TASKS)
+        read -r -a tasks <<< "$RE_TASKS"
         if [ "$RE_CMD" = "check" ] && [ "$RE_CHANGED" = "true" ] && [ -n "$RE_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
           tdir=$(python -c "from repoevals.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
           git fetch -q --depth=1 origin "$RE_BASE" || true
-          mapfile -t tasks < <(git diff --name-only "$RE_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
-          echo "changed tasks: ${tasks[*]:-<none, checking all>}"
+          if git diff --name-only "$RE_BASE" | grep -qE '(^|/)repoevals\.toml$|^\.agent-evals/graders/'; then
+            echo "configuration or graders changed: checking all tasks"
+          else
+            mapfile -t tasks < <(git diff --name-only "$RE_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
+            echo "changed tasks: ${tasks[*]:-<none, checking all>}"
+          fi
         fi
         case "$RE_CMD" in
           validate)      repoevals "${cfg[@]}" validate "${tasks[@]}" ;;
           check)         repoevals "${cfg[@]}" check --repeats "$RE_REPEATS" --json repoevals-check.json "${tasks[@]}" ;;
           guidance-lint) repoevals "${cfg[@]}" guidance-lint ;;
           run)
-            arms=(); for a in $RE_ARMS; do arms+=(--arm "$a"); done
+            arms=(); read -r -a arm_list <<< "$RE_ARMS"; for a in "${arm_list[@]}"; do arms+=(--arm "$a"); done
             model=(); [ -n "$RE_MODEL" ] && model=(--model "$RE_MODEL")
             repoevals "${cfg[@]}" run --agent "$RE_AGENT" "${model[@]}" "${arms[@]}" --repeats "$RE_REPEATS" --out "$RE_RUNS" "${tasks[@]}"
             repoevals report "$RE_RUNS" --out "$RE_RUNS/report"

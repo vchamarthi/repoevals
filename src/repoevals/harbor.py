@@ -1,5 +1,5 @@
-"""Export repoevals tasks to the Harbor task format (harborframework.com; also used by Terminal-Bench 2+), so the same
-tasks can be run by Harbor's agent adapters and cloud sandboxes.
+"""EXPERIMENTAL. Export repoevals tasks to the Harbor task format (harborframework.com; also used by
+Terminal-Bench 2+), so the same tasks can be run by Harbor's agent adapters and cloud sandboxes.
 
     <out>/<task_id>/
       task.toml                 Harbor fields + [metadata] copied; repoevals's [grader] kept under [metadata.repoevals]
@@ -75,8 +75,8 @@ def export_task(t: Task, cfg: RepoConfig, out: Path, workspace_meta: dict | None
     lines += ["", "[verifier]", f"timeout_sec = {float(t.verifier.get('timeout_sec', 1800))}",
               "", "[agent]", f"timeout_sec = {float(t.agent.get('timeout_sec', 3600))}",
               "", "[environment]", f"build_timeout_sec = {float(t.environment.get('build_timeout_sec', 1800))}"]
-    if t.environment.get("cpus"):
-        lines.append(f"cpus = {int(t.environment['cpus'])}")
+    if t.requires.get("cpus"):
+        lines.append(f"cpus = {int(t.requires['cpus'])}")
     (d / "task.toml").write_text("\n".join(lines) + "\n")
     (d / "instruction.md").write_text(t.instruction)
     dockerfile = cfg.environment.get("dockerfile")

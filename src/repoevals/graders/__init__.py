@@ -45,7 +45,7 @@ class GradeContext:
     def tree(self) -> WorkTree:
         """Tamper-resistant git view of the agent's tree (see util.WorkTree)."""
         return WorkTree(self.workspace, self.gitdir, self.config.test_globs + TEST_INFRA_GLOBS +
-                        self.config.protected_globs)
+                        self.config.protected_globs + list(self.task.grader.get("protected", [])))
 
     @property
     def g(self) -> dict:

@@ -4,7 +4,8 @@
 repoevals report runs/20261013-091500
 ```
 
-The report groups runs by **configuration**: agent, model and arm (for example `claude-code|<model>|guidance:none`).
+The report groups runs by **configuration**: label (if any), agent, model and arm (for example
+`release-0.19|claude-code|<model>|guidance:none`).
 
 ## Output files
 
@@ -12,7 +13,7 @@ The report groups runs by **configuration**: agent, model and arm (for example `
 |---|---|
 | `summary.md` | human-readable report, also written to the GitHub job summary |
 | `results.json` | all aggregated numbers |
-| `results.jsonl` | one record per graded run: task, family, configuration, status, pass, created date, metrics (`m_*`), process data (`p_*`), integrity |
+| `results.jsonl` | one record per graded run: task, family, configuration, status, pass, created date, agent status, time and version, base revision, task hash, metrics (`m_*`), process data (`p_*`), integrity |
 
 ## Metrics
 
@@ -25,7 +26,10 @@ The report groups runs by **configuration**: agent, model and arm (for example `
 | Δ pass rate | paired difference between two configurations on the tasks both ran |
 | p (sign-flip) | exact sign-flip permutation test of the paired difference |
 | better / worse | number of tasks on which the second configuration did better or worse |
-| cost, tokens | totals reported by the agent CLI |
+| cost, tokens | totals reported by the agent CLI; cost is `n/a` when the CLI does not report it |
+| median agent time | median wall-clock seconds per attempt |
+| by family | pass rate and confidence interval per task family |
+| task health | tasks that pass or fail in every configuration, and tasks with ungraded runs |
 
 Runs with status `skipped` or `error` are excluded from pass rates and listed in the status counts. Tasks without a
 pass/fail gate (status `scored`) contribute their scores (`f1`, `recall`, `kill_rate`, `speedup`,
@@ -37,7 +41,15 @@ pass/fail gate (status `scored`) contribute their scores (`f1`, `recall`, `kill_
 - A confidence interval that includes zero means the difference is not established; add tasks or repeats.
 - Read the transcripts of every run listed under **Integrity flags** before trusting a number.
 - A task that every configuration passes, or none does, adds no information to a comparison; review it.
-- Use `created` dates to compare results on tasks published before and after a model's training cutoff.
+- To separate tasks published before and after a model's training cutoff, filter `results.jsonl` on `created`:
+
+  ```python
+  import pandas as pd
+  df = pd.read_json("report/results.jsonl", lines=True)
+  df.assign(after=df.created >= "2026-03-01").groupby(["agent", "after"])["pass"].mean()
+  ```
+- Configurations marked ¹ include runs without an agent trace; their trace-based integrity checks did not run.
+- `report --fail-under 0.5` exits 1 when any configuration's pass rate is below 0.5, for use as a CI gate.
 
 ## Process data
 
