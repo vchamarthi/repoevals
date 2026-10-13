@@ -4,7 +4,7 @@ Built-in agents:
   claude-code   Claude Code CLI, headless:  claude -p --output-format stream-json --verbose
   codex         OpenAI Codex CLI, headless: codex exec --json
   noop          does nothing (the do-nothing baseline every benchmark should report)
-  oracle        applies the task's reference solution (used by `heldout check`)
+  oracle        applies the task's reference solution (used by `agentexam check`)
   cmd:<template>  any CLI; {prompt_file} {workspace} {model} are substituted, stdout becomes the answer
 
 Isolation: `--docker IMAGE` runs the agent in `docker run --network none` with only the workspace mounted.
@@ -49,7 +49,7 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
         write_events(run_dir, [])
         return AgentResult(0, 0.0, False, "")
     if agent == "oracle":
-        raise ValueError("the oracle agent is applied by `heldout check`, not run_agent")
+        raise ValueError("the oracle agent is applied by `agentexam check`, not run_agent")
     converter = None
     if agent == "claude-code":
         argv = ["claude", "-p", "--output-format", "stream-json", "--verbose",
@@ -68,7 +68,7 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
     container = ""
     if docker:
         import uuid
-        container = f"heldout-{uuid.uuid4().hex[:12]}"
+        container = f"agentexam-{uuid.uuid4().hex[:12]}"
         argv = _docker_wrap(argv, ws, docker, network, env, container)
     t0 = time.time()
     p = run(argv, cwd=ws, timeout=timeout, env=env, stdin=prompt)  # kills the whole process group on timeout

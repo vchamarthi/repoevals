@@ -1,16 +1,16 @@
-"""heldout command line.
+"""agentexam command line.
 
-  heldout init                         scaffold heldout.toml + .agent-evals/tasks/ in the current repo
-  heldout list                         list tasks
-  heldout validate [--source DIR]      static checks of every task (CI gate, seconds)
-  heldout check    [--source DIR]      null/oracle/probe self-check of graders (CI, no LLM, no secrets)
-  heldout prepare TASK RUN_DIR         snapshot a workspace for one task (history-free)
-  heldout grade RUN_DIR                grade a run directory, write grade.json
-  heldout run --agent A [--arm ...] [--repeats N] [--model M] [--docker IMG] [TASK...]
+  agentexam init                         scaffold agentexam.toml + .agent-evals/tasks/ in the current repo
+  agentexam list                         list tasks
+  agentexam validate [--source DIR]      static checks of every task (CI gate, seconds)
+  agentexam check    [--source DIR]      null/oracle/probe self-check of graders (CI, no LLM, no secrets)
+  agentexam prepare TASK RUN_DIR         snapshot a workspace for one task (history-free)
+  agentexam grade RUN_DIR                grade a run directory, write grade.json
+  agentexam run --agent A [--arm ...] [--repeats N] [--model M] [--docker IMG] [TASK...]
                                        prepare + run agent + grade, for a matrix of tasks x arms x repeats
-  heldout report RUNS_DIR [--out DIR]  aggregate grade.json files (CIs, paired arm deltas, pass@k, cost)
-  heldout export harbor --out DIR      export tasks in Harbor format
-  heldout guidance-lint                check paths named in AGENTS.md & co. exist
+  agentexam report RUNS_DIR [--out DIR]  aggregate grade.json files (CIs, paired arm deltas, pass@k, cost)
+  agentexam export harbor --out DIR      export tasks in Harbor format
+  agentexam guidance-lint                check paths named in AGENTS.md & co. exist
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from . import __version__
 from .config import load_config
 from .task import discover, load_task
 
-INIT_TOML = """# heldout configuration — see https://github.com/vchamarthi/heldout/blob/main/docs/config.md
+INIT_TOML = """# agentexam configuration — see https://github.com/vchamarthi/agentexam/blob/main/docs/config.md
 [repo]
 id = "{name}"
 tasks = ".agent-evals/tasks"
@@ -80,17 +80,17 @@ def _source(args, cfg) -> Path:
 
 def cmd_init(args) -> int:
     root = Path.cwd()
-    if (root / "heldout.toml").exists():
-        print("heldout.toml already exists")
+    if (root / "agentexam.toml").exists():
+        print("agentexam.toml already exists")
         return 1
-    (root / "heldout.toml").write_text(INIT_TOML.replace("{name}", root.name))
+    (root / "agentexam.toml").write_text(INIT_TOML.replace("{name}", root.name))
     ex = root / ".agent-evals" / "tasks" / "example_fix"
     (ex / "hidden" / "tests").mkdir(parents=True, exist_ok=True)
     (ex / "task.toml").write_text(EXAMPLE_TASK.replace("{today}", time.strftime("%Y-%m-%d")))
     (ex / "instruction.md").write_text("Describe the bug as a user would report it. Do not hint at the fix.\n")
     (ex / "hidden" / "tests" / "test_example_hidden.py").write_text("def test_placeholder():\n    assert True\n")
-    print("created heldout.toml and .agent-evals/tasks/example_fix — add setup.patch or oracle.patch, then run "
-          "`heldout validate` and `heldout check`")
+    print("created agentexam.toml and .agent-evals/tasks/example_fix — add setup.patch or oracle.patch, then run "
+          "`agentexam validate` and `agentexam check`")
     return 0
 
 
@@ -131,7 +131,7 @@ def cmd_check(args) -> int:
                                                            or f"null={r.get('null')} oracle={r.get('oracle')}"))
     if args.json:
         Path(args.json).write_text(json.dumps(res, indent=1))
-    _step_summary("heldout check", res)
+    _step_summary("agentexam check", res)
     return 1 if bad else 0
 
 
@@ -173,7 +173,7 @@ def cmd_run(args) -> int:
                 update_meta(rd, repeat=rep)
                 g = grade_run(rd, cfg, t)
                 print(f"{t.id:36s} {arm:20s} r{rep} {g['status']:7s} {res.seconds:7.1f}s")
-    print(f"runs in {out}; `heldout report {out}`")
+    print(f"runs in {out}; `agentexam report {out}`")
     return 0
 
 
@@ -225,9 +225,9 @@ def _step_summary_text(md: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser("heldout", description="Deterministic evaluations for AI coding agents.")
+    ap = argparse.ArgumentParser("agentexam", description="Deterministic evaluations for AI coding agents.")
     ap.add_argument("--version", action="version", version=__version__)
-    ap.add_argument("--config", help="path to heldout.toml (default: search upward from cwd)")
+    ap.add_argument("--config", help="path to agentexam.toml (default: search upward from cwd)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     _add = sub.add_parser
 

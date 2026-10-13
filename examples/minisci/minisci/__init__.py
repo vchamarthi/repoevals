@@ -1,4 +1,4 @@
-"""minisci: a tiny numerical library used to demonstrate heldout end to end."""
+"""minisci: a tiny numerical library used to demonstrate agentexam end to end."""
 from .stats import mean, var, logsumexp
 from .distance import chebyshev
 

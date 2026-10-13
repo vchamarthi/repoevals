@@ -2,17 +2,17 @@
 import json
 from pathlib import Path
 
-from heldout.check import check_all, validate_task
-from heldout.config import load_config
-from heldout.grade import apply_oracle, grade_run
-from heldout.report import write_report
-from heldout.task import discover, load_task
-from heldout.util import git
-from heldout.workspace import prepare
+from agentexam.check import check_all, validate_task
+from agentexam.config import load_config
+from agentexam.grade import apply_oracle, grade_run
+from agentexam.report import write_report
+from agentexam.task import discover, load_task
+from agentexam.util import git
+from agentexam.workspace import prepare
 
 
 def _cfg(repo: Path):
-    return load_config(repo / "heldout.toml")
+    return load_config(repo / "agentexam.toml")
 
 
 def test_validate_examples(minisci_repo):
@@ -40,7 +40,7 @@ def test_workspace_hides_history_and_tasks(minisci_repo, tmp_path):
     meta = prepare(cfg, t, tmp_path / "run", minisci_repo)
     ws = tmp_path / "run" / "workspace"
     assert not (ws / ".agent-evals").exists()
-    assert not (ws / "heldout.toml").exists()
+    assert not (ws / "agentexam.toml").exists()
     assert git(ws, "rev-list", "--all", "--count").out.strip() == "1"
     assert "/ n)" in (ws / "minisci" / "stats.py").read_text()  # setup.patch applied: bug present
     assert meta["start_sha"]

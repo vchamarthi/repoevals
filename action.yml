@@ -1,4 +1,4 @@
-name: heldout
+name: agentexam
 description: Validate, self-check, run and report deterministic AI-coding-agent evals defined in your repository.
 author: vchamarthi
 branding:
@@ -16,7 +16,7 @@ inputs:
     description: "check: only tasks whose directory changed relative to the PR base (falls back to all)"
     default: "true"
   config:
-    description: Path to heldout.toml (default: search from the repository root)
+    description: Path to agentexam.toml (default: search from the repository root)
     default: ""
   repeats:
     description: "check: oracle repeats (flakiness). run: repeats per task and arm."
@@ -32,12 +32,12 @@ inputs:
     default: "guidance:raw"
   runs-dir:
     description: "run/report: directory for run outputs"
-    default: heldout-runs
+    default: agentexam-runs
   python-version:
-    description: Python used to run heldout itself
+    description: Python used to run agentexam itself
     default: "3.12"
-  heldout-version:
-    description: "pip requirement for heldout (default: this action's checkout)"
+  agentexam-version:
+    description: "pip requirement for agentexam (default: this action's checkout)"
     default: ""
 
 outputs:
@@ -51,51 +51,51 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-    - name: Install heldout
+    - name: Install agentexam
       shell: bash
       run: |
-        if [ -n "${{ inputs.heldout-version }}" ]; then
-          python -m pip install -q "${{ inputs.heldout-version }}"
+        if [ -n "${{ inputs.agentexam-version }}" ]; then
+          python -m pip install -q "${{ inputs.agentexam-version }}"
         else
           python -m pip install -q "${{ github.action_path }}"
         fi
-    - name: heldout ${{ inputs.command }}
+    - name: agentexam ${{ inputs.command }}
       id: main
       shell: bash
       env:
-        HO_CMD: ${{ inputs.command }}
-        HO_TASKS: ${{ inputs.tasks }}
-        HO_CHANGED: ${{ inputs.changed-only }}
-        HO_CONFIG: ${{ inputs.config }}
-        HO_REPEATS: ${{ inputs.repeats }}
-        HO_AGENT: ${{ inputs.agent }}
-        HO_MODEL: ${{ inputs.model }}
-        HO_ARMS: ${{ inputs.arms }}
-        HO_RUNS: ${{ inputs.runs-dir }}
-        HO_BASE: ${{ github.event.pull_request.base.sha }}
+        AE_CMD: ${{ inputs.command }}
+        AE_TASKS: ${{ inputs.tasks }}
+        AE_CHANGED: ${{ inputs.changed-only }}
+        AE_CONFIG: ${{ inputs.config }}
+        AE_REPEATS: ${{ inputs.repeats }}
+        AE_AGENT: ${{ inputs.agent }}
+        AE_MODEL: ${{ inputs.model }}
+        AE_ARMS: ${{ inputs.arms }}
+        AE_RUNS: ${{ inputs.runs-dir }}
+        AE_BASE: ${{ github.event.pull_request.base.sha }}
       run: |
         set -euo pipefail
         cfg=()
-        [ -n "$HO_CONFIG" ] && cfg=(--config "$HO_CONFIG")
-        tasks=($HO_TASKS)
-        if [ "$HO_CMD" = "check" ] && [ "$HO_CHANGED" = "true" ] && [ -n "$HO_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
-          tdir=$(python -c "from heldout.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
-          git fetch -q --depth=1 origin "$HO_BASE" || true
-          mapfile -t tasks < <(git diff --name-only "$HO_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
+        [ -n "$AE_CONFIG" ] && cfg=(--config "$AE_CONFIG")
+        tasks=($AE_TASKS)
+        if [ "$AE_CMD" = "check" ] && [ "$AE_CHANGED" = "true" ] && [ -n "$AE_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
+          tdir=$(python -c "from agentexam.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
+          git fetch -q --depth=1 origin "$AE_BASE" || true
+          mapfile -t tasks < <(git diff --name-only "$AE_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
           echo "changed tasks: ${tasks[*]:-<none, checking all>}"
         fi
-        case "$HO_CMD" in
-          validate)      heldout "${cfg[@]}" validate "${tasks[@]}" ;;
-          check)         heldout "${cfg[@]}" check --repeats "$HO_REPEATS" --json heldout-check.json "${tasks[@]}" ;;
-          guidance-lint) heldout "${cfg[@]}" guidance-lint ;;
+        case "$AE_CMD" in
+          validate)      agentexam "${cfg[@]}" validate "${tasks[@]}" ;;
+          check)         agentexam "${cfg[@]}" check --repeats "$AE_REPEATS" --json agentexam-check.json "${tasks[@]}" ;;
+          guidance-lint) agentexam "${cfg[@]}" guidance-lint ;;
           run)
-            arms=(); for a in $HO_ARMS; do arms+=(--arm "$a"); done
-            model=(); [ -n "$HO_MODEL" ] && model=(--model "$HO_MODEL")
-            heldout "${cfg[@]}" run --agent "$HO_AGENT" "${model[@]}" "${arms[@]}" --repeats "$HO_REPEATS" --out "$HO_RUNS" "${tasks[@]}"
-            heldout report "$HO_RUNS" --out "$HO_RUNS/report"
-            echo "report=$HO_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
+            arms=(); for a in $AE_ARMS; do arms+=(--arm "$a"); done
+            model=(); [ -n "$AE_MODEL" ] && model=(--model "$AE_MODEL")
+            agentexam "${cfg[@]}" run --agent "$AE_AGENT" "${model[@]}" "${arms[@]}" --repeats "$AE_REPEATS" --out "$AE_RUNS" "${tasks[@]}"
+            agentexam report "$AE_RUNS" --out "$AE_RUNS/report"
+            echo "report=$AE_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
           report)
-            heldout report "$HO_RUNS" --out "$HO_RUNS/report"
-            echo "report=$HO_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
-          *) echo "unknown command $HO_CMD"; exit 2 ;;
+            agentexam report "$AE_RUNS" --out "$AE_RUNS/report"
+            echo "report=$AE_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
+          *) echo "unknown command $AE_CMD"; exit 2 ;;
         esac

@@ -1,16 +1,16 @@
-"""Export heldout tasks to the Harbor task format (harborframework.com; also used by Terminal-Bench 2+), so the same
+"""Export agentexam tasks to the Harbor task format (harborframework.com; also used by Terminal-Bench 2+), so the same
 tasks can be run by Harbor's agent adapters and cloud sandboxes.
 
     <out>/<task_id>/
-      task.toml                 Harbor fields + [metadata] copied; heldout's [grader] kept under [metadata.heldout]
+      task.toml                 Harbor fields + [metadata] copied; agentexam's [grader] kept under [metadata.agentexam]
       instruction.md
-      environment/Dockerfile    from [environment].dockerfile in heldout.toml, or a minimal template
+      environment/Dockerfile    from [environment].dockerfile in agentexam.toml, or a minimal template
       solution/solve.sh         applies the reference solution
-      tests/test.sh             runs `heldout grade` inside the container, writes /logs/verifier/reward.txt
-      tests/task/               the full heldout task directory (hidden tests, mutants, manifests)
+      tests/test.sh             runs `agentexam grade` inside the container, writes /logs/verifier/reward.txt
+      tests/task/               the full agentexam task directory (hidden tests, mutants, manifests)
 
-Harbor uploads tests/ only at verification time, which matches heldout's rule that the agent never sees hidden
-material. The exported environment must contain the repository at /workspace with git and heldout installed.
+Harbor uploads tests/ only at verification time, which matches agentexam's rule that the agent never sees hidden
+material. The exported environment must contain the repository at /workspace with git and agentexam installed.
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ from .task import Task
 
 DOCKERFILE = """FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git build-essential && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir heldout
-# The workspace (repository snapshot at the task base, prepared by `heldout prepare`) is copied here:
+RUN pip install --no-cache-dir agentexam
+# The workspace (repository snapshot at the task base, prepared by `agentexam prepare`) is copied here:
 COPY workspace/ /workspace/
 WORKDIR /workspace
 """
@@ -31,16 +31,16 @@ WORKDIR /workspace
 TEST_SH = """#!/usr/bin/env bash
 set -uo pipefail
 mkdir -p /logs/verifier
-RUN=/tmp/heldout-run
+RUN=/tmp/agentexam-run
 mkdir -p "$RUN"
-ln -sfn /workspace "$RUN/workspace"  # graded in place; heldout resolves the link
+ln -sfn /workspace "$RUN/workspace"  # graded in place; agentexam resolves the link
 cp /tests/meta.json "$RUN/meta.json"
 sed -i "s#__TASK_DIR__#/tests/task#" "$RUN/meta.json"
 [ -f /logs/agent/answer.txt ] && cp /logs/agent/answer.txt "$RUN/answer.txt"
-heldout --config /tests/heldout.toml grade "$RUN" || true
+agentexam --config /tests/agentexam.toml grade "$RUN" || true
 python3 - <<'PY'
 import json
-g = json.load(open("/tmp/heldout-run/grade.json"))
+g = json.load(open("/tmp/agentexam-run/grade.json"))
 open("/logs/verifier/reward.txt", "w").write("1" if g.get("pass") else "0")
 json.dump({"pass": g.get("pass"), **{k: v for k, v in g.get("metrics", {}).items() if isinstance(v, (int, float))}},
           open("/logs/verifier/reward.json", "w"))
@@ -71,7 +71,7 @@ def export_task(t: Task, cfg: RepoConfig, out: Path, workspace_meta: dict | None
     md = {k: v for k, v in t.metadata.items() if not isinstance(v, dict)}
     lines = ['version = "1.0"', "", "[metadata]"]
     lines += [f"{k} = {_toml_value(v)}" for k, v in md.items()]
-    lines += ["", "[metadata.heldout]"] + [f"{k} = {_toml_value(v)}" for k, v in t.grader.items()]
+    lines += ["", "[metadata.agentexam]"] + [f"{k} = {_toml_value(v)}" for k, v in t.grader.items()]
     lines += ["", "[verifier]", f"timeout_sec = {float(t.verifier.get('timeout_sec', 1800))}",
               "", "[agent]", f"timeout_sec = {float(t.agent.get('timeout_sec', 3600))}",
               "", "[environment]", f"build_timeout_sec = {float(t.environment.get('build_timeout_sec', 1800))}"]
@@ -97,10 +97,10 @@ def export_task(t: Task, cfg: RepoConfig, out: Path, workspace_meta: dict | None
                   "> /logs/agent/answer.txt"]
     (d / "solution" / "solve.sh").write_text("\n".join(solve) + "\n")
     shutil.copytree(t.dir, d / "tests" / "task")
-    cfg_file = next((cfg.root / n for n in ("heldout.toml", ".agent-evals/heldout.toml") if (cfg.root / n).exists()),
+    cfg_file = next((cfg.root / n for n in ("agentexam.toml", ".agent-evals/agentexam.toml") if (cfg.root / n).exists()),
                     None)
     if cfg_file:
-        shutil.copy2(cfg_file, d / "tests" / "heldout.toml")
+        shutil.copy2(cfg_file, d / "tests" / "agentexam.toml")
     import json
     meta = dict(workspace_meta or {})
     meta.update(task=t.id, task_dir="__TASK_DIR__", start_sha=meta.get("start_sha", "HEAD"))

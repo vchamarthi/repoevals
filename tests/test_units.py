@@ -3,10 +3,10 @@ import math
 
 import pytest
 
-from heldout.graders.review import gate_pass, parse_findings
-from heldout.stats import cluster_bootstrap, paired_compare, pass_at_k, pass_hat_k
-from heldout.trace import from_claude_stream, from_codex_json, process_metrics
-from heldout.util import glob_match, last_json
+from agentexam.graders.review import gate_pass, parse_findings
+from agentexam.stats import cluster_bootstrap, paired_compare, pass_at_k, pass_hat_k
+from agentexam.trace import from_claude_stream, from_codex_json, process_metrics
+from agentexam.util import glob_match, last_json
 
 
 def test_glob_match():
@@ -85,7 +85,7 @@ def test_codex_converter():
 
 def test_numeric_runner_ulp():
     np = pytest.importorskip("numpy")
-    from heldout.data.numeric_runner import default_compare, ulp_distance
+    from agentexam.data.numeric_runner import default_compare, ulp_distance
     a = np.array([1.0], dtype=np.float64)
     b = np.nextafter(a, 2)
     assert ulp_distance(np, a, b) == 1

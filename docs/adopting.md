@@ -1,16 +1,16 @@
-# Adopting heldout in a repository
+# Adopting agentexam in a repository
 
-The repository owns **what** is measured (tasks, a short config). heldout owns **how** (workspaces, graders,
+The repository owns **what** is measured (tasks, a short config). agentexam owns **how** (workspaces, graders,
 integrity checks, statistics, CI).
 
 ## 1. Config
 
 ```bash
-pip install "heldout @ git+https://github.com/vchamarthi/heldout"
-cd your-repo && heldout init
+pip install "agentexam @ git+https://github.com/vchamarthi/agentexam"
+cd your-repo && agentexam init
 ```
 
-`heldout init` writes `heldout.toml` and an example task. Edit the four things that are repository-specific:
+`agentexam init` writes `agentexam.toml` and an example task. Edit the four things that are repository-specific:
 
 ```toml
 [test]
@@ -39,7 +39,7 @@ Good first tasks, in order of value per hour of effort:
 4. For numerical libraries, **one `numeric` task**: a probe comparing against NumPy/SciPy/mpmath on edge cases
    (huge/tiny values, NaN/Inf, empty, non-contiguous, every supported dtype).
 
-Then: `heldout validate --source .` and `heldout check --repeats 3` until every task is `OK`.
+Then: `agentexam validate --source .` and `agentexam check --repeats 3` until every task is `OK`.
 
 Rules of thumb (from the Agentic Benchmark Checklist and the oneDAL pilot):
 
@@ -54,7 +54,7 @@ Rules of thumb (from the Agentic Benchmark Checklist and the oneDAL pilot):
 # .github/workflows/agent-evals.yml
 on:
   pull_request:
-    paths: [".agent-evals/**", "heldout.toml", "**/AGENTS.md", ".github/instructions/**"]
+    paths: [".agent-evals/**", "agentexam.toml", "**/AGENTS.md", ".github/instructions/**"]
   schedule: [{cron: "17 3 * * 1"}]          # weekly full self-check
 jobs:
   validate:
@@ -62,9 +62,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}               # tasks reference base commits
-      - uses: vchamarthi/heldout@v0
+      - uses: vchamarthi/agentexam@v0
         with: {command: validate}
-      - uses: vchamarthi/heldout@v0
+      - uses: vchamarthi/agentexam@v0
         with: {command: guidance-lint}
   check:
     runs-on: ubuntu-latest
@@ -72,21 +72,21 @@ jobs:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
       - run: ./ci/setup-env.sh               # whatever makes your tests runnable
-      - uses: vchamarthi/heldout@v0
+      - uses: vchamarthi/agentexam@v0
         with: {command: check, changed-only: "true", repeats: "2"}
 ```
 
 No model and no secret is used, so this is safe on pull requests from forks. Agent runs (`command: run`) need an
 API key and belong in a manually triggered or scheduled workflow, ideally inside a container with no network
-(`heldout run --docker <image>`).
+(`agentexam run --docker <image>`).
 
 ## 4. Running agents
 
 ```bash
-heldout run --agent claude-code --model <model-id> --arm guidance:raw --arm guidance:none --repeats 8
-heldout run --agent codex --repeats 8 family:fix
-heldout run --agent "cmd:my-agent --prompt-file {prompt_file}" --repeats 3
-heldout report runs/<stamp>
+agentexam run --agent claude-code --model <model-id> --arm guidance:raw --arm guidance:none --repeats 8
+agentexam run --agent codex --repeats 8 family:fix
+agentexam run --agent "cmd:my-agent --prompt-file {prompt_file}" --repeats 3
+agentexam report runs/<stamp>
 ```
 
 The report gives per-arm pass rates with task-clustered 95% CIs, paired deltas between arms (same tasks) with a

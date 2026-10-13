@@ -1,13 +1,13 @@
-# Methodology standards heldout implements (and the ones it does not yet)
+# Methodology standards agentexam implements (and the ones it does not yet)
 
 Sources and full discussion: [research/02-landscape.md](research/02-landscape.md).
 
 ## Task validity
 
-| practice | source | heldout |
+| practice | source | agentexam |
 |---|---|---|
-| Every task solvable: the reference solution passes | ABC (Zhu et al. 2025); Terminal-Bench; SWE-bench harness validation | `heldout check` oracle probe |
-| The do-nothing agent fails | ABC; Terminal-Bench 3 vetting | `heldout check` null probe |
+| Every task solvable: the reference solution passes | ABC (Zhu et al. 2025); Terminal-Bench; SWE-bench harness validation | `agentexam check` oracle probe |
+| The do-nothing agent fails | ABC; Terminal-Bench 3 vetting | `agentexam check` null probe |
 | Flakiness measured, not hidden by retries | ABC; SWE-bench-Live | `check --repeats N`; hidden tests never retried |
 | Graders reject known cheats | ImpossibleBench (2026); SWE-Bench Pro V2 | findings-spam probe; test-tampering and protected-file reset; history-mining detection |
 | Mutants are valid and non-equivalent | mutation testing practice; Meta ACH | reference tests must kill `oracle_min_kill` (default 100%); build-breaking mutants excluded |
@@ -17,7 +17,7 @@ Sources and full discussion: [research/02-landscape.md](research/02-landscape.md
 
 ## Outcome validity
 
-| practice | source | heldout |
+| practice | source | agentexam |
 |---|---|---|
 | Passing tests ≠ correct (PatchDiff, UTBoost, EvalPlus) | ICSE 2026; ACL 2025 | hidden tests + regression suites; numeric probes check edge cases tests often miss |
 | Review scored on precision as well as recall | ReviewBench 2026; oneDAL PR critique | one-to-one matching, precision/F1, decoys, clean controls, findings cap |
@@ -26,7 +26,7 @@ Sources and full discussion: [research/02-landscape.md](research/02-landscape.md
 
 ## Reporting
 
-| practice | source | heldout |
+| practice | source | agentexam |
 |---|---|---|
 | Multiple trials; pass@k and pass^k | Chen 2021; tau-bench | per-task pass@1/@3, pass^3 |
 | Confidence intervals clustered by task | Miller 2024, *Adding Error Bars to Evals* | task-then-trial bootstrap |

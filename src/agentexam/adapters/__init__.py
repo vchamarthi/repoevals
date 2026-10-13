@@ -7,7 +7,7 @@
     timeout      the run exceeded its time limit
     error        anything else (tool missing, crashed runner)
 
-Adapters are chosen by `[test].adapter` in heldout.toml and can be overridden per task with `[grader].adapter`.
+Adapters are chosen by `[test].adapter` in agentexam.toml and can be overridden per task with `[grader].adapter`.
 """
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class PytestAdapter(Adapter):
             # sys.exit in a conftest) writes no JUnit report; a run where everything was skipped passed nothing
             if res.status == "passed" and not junit.exists():
                 res.status = "error"
-                res.log += "\nheldout: pytest exited 0 without writing a JUnit report"
+                res.log += "\nagentexam: pytest exited 0 without writing a JUnit report"
             elif res.status == "passed" and res.passed == 0:
                 res.status = "no_tests"
             # collection errors are reported as errors with rc 1 or 2 depending on the plugin set

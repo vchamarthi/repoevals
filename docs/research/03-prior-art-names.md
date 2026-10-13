@@ -1,5 +1,9 @@
 # 03 — Prior art and naming for a repo-agnostic agent-eval framework
 
+> **Outcome (2026-10-13):** the project first shipped as `heldout` (rank 1 below) and was then renamed to
+> **`agentexam`** for a more self-explanatory name — free on PyPI, npm and GitHub, with no exact-name collisions.
+> The ranking below is kept as researched.
+
 Date: 2026-10-13. Scope: (1) is the generalized oneDAL PR #3818 idea already done? (2) names for the new project under GitHub `vchamarthi`.
 
 Reference: [uxlfoundation/oneDAL#3818](https://github.com/uxlfoundation/oneDAL/pull/3818) (open, created 2026-09-28): 27 tasks in `dev/agent_evals/` (3 build, 13 fix/feature incl. 9 mined from merged PRs with hidden tests, 2 test-writing graded by 7 seeded mutants each, 9 review: planted defects + decoys + clean-PR control + 6 human-review replays). `run.py validate|static|check`; CI uses no model, no key. The agent runner ("agent-benchmark", reads `repo-eval.yaml`) is Intel-internal, "to be published".

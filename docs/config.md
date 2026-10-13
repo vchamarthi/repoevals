@@ -1,6 +1,6 @@
-# heldout.toml reference
+# agentexam.toml reference
 
-Looked up from the current directory upwards: `heldout.toml`, then `.agent-evals/heldout.toml`.
+Looked up from the current directory upwards: `agentexam.toml`, then `.agent-evals/agentexam.toml`.
 
 ```toml
 [repo]
@@ -52,4 +52,4 @@ answer.
 
 | variable | meaning |
 |---|---|
-| `HELDOUT_DEVICES` | comma-separated devices present on this host (default `cpu`), matched against `requires.devices` |
+| `AGENTEXAM_DEVICES` | comma-separated devices present on this host (default `cpu`), matched against `requires.devices` |

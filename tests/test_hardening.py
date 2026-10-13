@@ -1,4 +1,4 @@
-"""Regression tests for bugs and grader-gaming holes found in an independent code review of heldout 0.1.
+"""Regression tests for bugs and grader-gaming holes found in an independent code review of agentexam 0.1.
 Each test reproduces one attack or defect and asserts the correct behaviour."""
 import json
 import os
@@ -9,23 +9,23 @@ from pathlib import Path
 
 import pytest
 
-from heldout.config import RepoConfig, load_config
-from heldout.grade import apply_oracle, grade_run
-from heldout.graders import GradeContext
-from heldout.graders.review import g_review_seeded
-from heldout.graders.tests import g_command
-from heldout.report import write_report
-from heldout.stats import pass_at_k
-from heldout.task import Task, load_task
-from heldout.util import git, glob_match
-from heldout.workspace import prepare
+from agentexam.config import RepoConfig, load_config
+from agentexam.grade import apply_oracle, grade_run
+from agentexam.graders import GradeContext
+from agentexam.graders.review import g_review_seeded
+from agentexam.graders.tests import g_command
+from agentexam.report import write_report
+from agentexam.stats import pass_at_k
+from agentexam.task import Task, load_task
+from agentexam.util import git, glob_match
+from agentexam.workspace import prepare
 
 GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@t"}
 
 
 def _cfg(repo: Path):
-    return load_config(repo / "heldout.toml")
+    return load_config(repo / "agentexam.toml")
 
 
 def _prep(repo: Path, task_id: str, rd: Path, oracle: bool = False):
@@ -113,7 +113,7 @@ def test_comparison_gate_in_hidden_tests_fails_correct_solution(minisci_repo, tm
 # --------------------------------------------------------------------------------------------- workspace / prepare
 
 def test_prepare_inside_source_repo_silently_skips_setup_patch(minisci_repo):
-    """`heldout run` defaults to --out runs/<stamp> under the cwd (the repo root). `git apply` run inside a
+    """`agentexam run` defaults to --out runs/<stamp> under the cwd (the repo root). `git apply` run inside a
     subdirectory of another repository ignores paths outside that subdirectory and exits 0, so setup.patch is
     never applied: the bug is absent and every agent 'fixes' it."""
     cfg = _cfg(minisci_repo)
@@ -226,14 +226,14 @@ def test_numeric_candidate_crash_is_error_not_fail(minisci_repo, tmp_path):
 
 def test_numeric_complex_inf_vs_finite_accepted():
     np = pytest.importorskip("numpy")
-    from heldout.data.numeric_runner import default_compare
+    from agentexam.data.numeric_runner import default_compare
     r = default_compare(np, {}, np.array([complex(np.inf, 0.0)]), np.array([1.0 + 0j]), {})
     assert r["ok"] is False
 
 
 def test_numeric_complex_result_for_real_reference_accepted():
     np = pytest.importorskip("numpy")
-    from heldout.data.numeric_runner import default_compare
+    from agentexam.data.numeric_runner import default_compare
     r = default_compare(np, {}, np.array([1.0 + 5.0j]), np.array([1.0]), {})
     assert r["ok"] is False
 
@@ -295,7 +295,7 @@ def test_pass_at_k_with_zero_successes_and_n_below_k():
 # --------------------------------------------------------------------------------------------- integrity
 
 def _repo_with_test(tmp_path: Path, added_line: str):
-    from heldout.integrity import check
+    from agentexam.integrity import check
     ws = tmp_path / "ws"
     (ws / "tests").mkdir(parents=True)
     (ws / "tests" / "test_a.py").write_text("def test_a():\n    assert 1\n")
@@ -321,13 +321,13 @@ def test_integrity_misses_skiptest(tmp_path):
 # --------------------------------------------------------------------------------------------- harbor export
 
 def test_harbor_test_sh_passes_config_after_subcommand(minisci_repo, tmp_path):
-    """--config used to be accepted only before the subcommand, so the Harbor verifier's `heldout grade "$RUN"
+    """--config used to be accepted only before the subcommand, so the Harbor verifier's `agentexam grade "$RUN"
     --config ...` exited 2 and never graded. Both positions must work."""
-    from heldout.cli import main
-    from heldout.harbor import TEST_SH
-    assert "heldout --config /tests/heldout.toml grade" in TEST_SH
+    from agentexam.cli import main
+    from agentexam.harbor import TEST_SH
+    assert "agentexam --config /tests/agentexam.toml grade" in TEST_SH
     cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run", oracle=True)
-    rc = main(["grade", str(tmp_path / "run"), "--config", str(minisci_repo / "heldout.toml")])
+    rc = main(["grade", str(tmp_path / "run"), "--config", str(minisci_repo / "agentexam.toml")])
     assert rc == 0
 
 
@@ -347,7 +347,7 @@ def test_grading_a_symlinked_workspace_errors(minisci_repo, tmp_path):
 def test_agent_timeout_leaves_children_running(tmp_path):
     """subprocess.run(timeout=...) kills only the direct child; the agent's background processes keep editing the
     workspace while it is graded (same for `docker run`, whose container survives the killed client)."""
-    from heldout.agents import run_agent
+    from agentexam.agents import run_agent
     rd = tmp_path / "rd"
     (rd / "workspace").mkdir(parents=True)
     (rd / "instruction.md").write_text("x")

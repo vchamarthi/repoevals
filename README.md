@@ -1,8 +1,8 @@
-# heldout
+# agentexam
 
-**Deterministic evaluations for AI coding agents, defined in your repository, graded without an LLM.**
+**An exam for AI coding agents, set in your own repository: deterministic tasks, hidden answers, graded without an LLM.**
 
-`heldout` is a small, repo-agnostic framework for answering questions like *"Does our `AGENTS.md` actually help?"*,
+`agentexam` is a small, repo-agnostic framework for answering questions like *"Does our `AGENTS.md` actually help?"*,
 *"Which agent fixes our numerical bugs without breaking tolerances?"*, or *"Can this agent review our PRs without
 drowning maintainers in false alarms?"* — measured on your own code, with tests and graders the agent never sees.
 
@@ -11,7 +11,7 @@ CI action live here, so each project does not have to vendor thousands of lines 
 
 ```
 your-repo/
-  heldout.toml                  # ~20 lines: test adapter, test/library globs, guidance files
+  agentexam.toml                  # ~20 lines: test adapter, test/library globs, guidance files
   .agent-evals/tasks/
     fix_kmeans_empty_cluster/   # task.toml + instruction.md + setup.patch + hidden/tests/...
     review_seeded_softmax/      # task.toml + review.patch + manifest.json (seeds, decoys)
@@ -19,11 +19,11 @@ your-repo/
 ```
 
 ```bash
-pip install heldout                                   # (not yet on PyPI — install from git for now)
-heldout validate                                      # static checks, seconds
-heldout check                                         # null agent fails, reference passes, spam rejected — no LLM, no secrets
-heldout run --agent claude-code --arm guidance:raw --arm guidance:none --repeats 5
-heldout report runs/<stamp>                           # pass rates with task-clustered CIs, paired arm deltas, pass@k, cost
+pip install "agentexam @ git+https://github.com/vchamarthi/agentexam"   # PyPI release pending
+agentexam validate                                      # static checks, seconds
+agentexam check                                         # null agent fails, reference passes, spam rejected — no LLM, no secrets
+agentexam run --agent claude-code --arm guidance:raw --arm guidance:none --repeats 5
+agentexam report runs/<stamp>                           # pass rates with task-clustered CIs, paired arm deltas, pass@k, cost
 ```
 
 > Status: **alpha (0.1)**. The core, the graders, and the example suite are covered by end-to-end tests. Intel
@@ -31,12 +31,12 @@ heldout report runs/<stamp>                           # pass rates with task-clu
 
 ## Where this comes from
 
-`heldout` generalizes the design of [uxlfoundation/oneDAL#3818](https://github.com/uxlfoundation/oneDAL/pull/3818)
+`agentexam` generalizes the design of [uxlfoundation/oneDAL#3818](https://github.com/uxlfoundation/oneDAL/pull/3818)
 ("agent-eval tasks and graders for oneDAL, with no-LLM CI"). That PR introduced, for one C++ library, the families and
 rules reused here: hidden-test bug fixes mined from merged PRs, seeded-defect review with decoys and a clean-change
 control, human-review replay, test writing graded by mutant kill rate, history-free workspaces, and a CI self-check
 proving every task is solvable and every grader rejects the untouched tree. A reviewer on that PR noted that most of
-the grader logic is generic and does not belong in the library repository; `heldout` is that extraction, made
+the grader logic is generic and does not belong in the library repository; `agentexam` is that extraction, made
 build-system-agnostic, hardened, and extended with results from the 2025–26 agent-evaluation literature.
 See [docs/research/01-pr3818.md](docs/research/01-pr3818.md) for a file-by-file analysis.
 
@@ -54,7 +54,7 @@ See [docs/research/01-pr3818.md](docs/research/01-pr3818.md) for a file-by-file 
 | `perf` | `perf` | make something faster without breaking it | correctness gate, then interleaved base-vs-candidate timing; pass if the bootstrap CI lower bound of the speedup ≥ target |
 
 Graders are plugins: a repository can add its own in `[repo].graders = ".agent-evals/graders"`, and packages can
-register them under the `heldout.graders` entry-point group.
+register them under the `agentexam.graders` entry-point group.
 
 ## What every run gets, for free
 
@@ -76,14 +76,14 @@ register them under the `heldout.graders` entry-point group.
   bootstrap CIs; paired comparison between arms on the same tasks with an exact sign-flip test.
 - **A/B arms for agent guidance.** `guidance:raw`, `guidance:none`, `guidance:file=<path>` — same tasks, same
   grader, only the instructions differ.
-- **Harbor export (experimental).** `heldout export harbor` writes Terminal-Bench/Harbor task directories
-  (task.toml, instruction, oracle solution, a verifier that calls `heldout grade`); the environment image must still
+- **Harbor export (experimental).** `agentexam export harbor` writes Terminal-Bench/Harbor task directories
+  (task.toml, instruction, oracle solution, a verifier that calls `agentexam grade`); the environment image must still
   be supplied per repository.
-- **Guidance lint.** `heldout guidance-lint` reports paths named in `AGENTS.md` & co. that no longer exist.
+- **Guidance lint.** `agentexam guidance-lint` reports paths named in `AGENTS.md` & co. that no longer exist.
 
 ## The self-check is the product
 
-`heldout check` runs in CI on every PR that touches tasks, without a model or a secret, so it is safe on forks:
+`agentexam check` runs in CI on every PR that touches tasks, without a model or a secret, so it is safe on forks:
 
 | probe | requirement |
 |---|---|
@@ -98,15 +98,15 @@ do-nothing agent passes, or that its own reference fails, is a bug in the benchm
 ## Quick start (example repository)
 
 ```bash
-git clone https://github.com/vchamarthi/heldout && cd heldout
+git clone https://github.com/vchamarthi/agentexam && cd agentexam
 python -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]'
 pytest -q                                          # unit + end-to-end tests on examples/minisci
 
 cp -R examples/minisci /tmp/minisci && cd /tmp/minisci && git init -q && git add -A && git commit -qm init
-heldout list
-heldout check                                      # 6 tasks, all OK
-heldout run --agent claude-code --repeats 3 fix_var_ddof review_seeded_softmax
-heldout report runs/<stamp>
+agentexam list
+agentexam check                                      # 6 tasks, all OK
+agentexam run --agent claude-code --repeats 3 fix_var_ddof review_seeded_softmax
+agentexam report runs/<stamp>
 ```
 
 Adopting in your repository: [docs/adopting.md](docs/adopting.md). Config reference: [docs/config.md](docs/config.md).

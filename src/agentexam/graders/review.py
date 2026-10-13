@@ -206,7 +206,7 @@ def o_review(ctx: GradeContext) -> str:
 
 
 def spam_answer(ctx: GradeContext) -> str:
-    """Adversarial probe for `heldout check`: one finding on every changed line of the review patch."""
+    """Adversarial probe for `agentexam check`: one finding on every changed line of the review patch."""
     diff = ctx.tree().show("--unified=0", "--no-color", ctx.start_sha)
     findings, cur, line = [], None, 0
     for ln in diff.splitlines():

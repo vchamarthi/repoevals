@@ -3,7 +3,7 @@ requires = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
 [project]
-name = "heldout"
+name = "agentexam"
 version = "0.1.0"
 description = "Repo-agnostic, deterministic evaluations for AI coding agents: declare tasks in your repo, grade them without an LLM."
 readme = "README.md"
@@ -25,10 +25,10 @@ numeric = ["numpy>=1.23"]
 dev = ["pytest>=7", "numpy>=1.23"]
 
 [project.scripts]
-heldout = "heldout.cli:main"
+agentexam = "agentexam.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/heldout"]
+packages = ["src/agentexam"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

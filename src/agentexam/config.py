@@ -1,4 +1,4 @@
-"""Per-repository configuration: `heldout.toml` at the repository root (or the path given with --config).
+"""Per-repository configuration: `agentexam.toml` at the repository root (or the path given with --config).
 
 The config is the only thing a repository must own besides its task folders. Everything that is specific to a
 repository's build and test tooling lives here, so graders stay generic.
@@ -47,7 +47,7 @@ DEFAULT_TEST_GLOBS = ["tests/**", "test/**", "**/tests/**", "**/test_*.py", "**/
 # test infrastructure the agent could use to skip or deselect tests without touching a test file; reset before
 # grading by hidden_tests and included in integrity checks
 TEST_INFRA_GLOBS = ["conftest.py", "**/conftest.py", "pytest.ini", "**/pytest.ini", "tox.ini", ".pytest.ini"]
-CONFIG_NAMES = ("heldout.toml", ".agent-evals/heldout.toml")
+CONFIG_NAMES = ("agentexam.toml", ".agent-evals/agentexam.toml")
 
 
 @dataclass
@@ -89,7 +89,7 @@ class RepoConfig:
     @property
     def eval_globs(self) -> list[str]:
         """Paths removed from the agent's workspace: task definitions, repo graders, this config, `[repo].hide`."""
-        globs = [f"{self.tasks.rstrip('/')}/**", "heldout.toml", ".agent-evals/**"]
+        globs = [f"{self.tasks.rstrip('/')}/**", "agentexam.toml", ".agent-evals/**"]
         if self.graders:
             globs.append(f"{self.graders.rstrip('/')}/**")
         return globs + list(self.hide)
@@ -105,7 +105,7 @@ def find_config(start: Path) -> Path | None:
 
 
 def load_config(path: Path | None = None, root: Path | None = None) -> RepoConfig:
-    """Load heldout.toml. The repository root is the config's directory (or its parent for .agent-evals/)."""
+    """Load agentexam.toml. The repository root is the config's directory (or its parent for .agent-evals/)."""
     if path is None:
         path = find_config(root or Path.cwd())
     if path is None:

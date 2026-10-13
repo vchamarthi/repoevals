@@ -3,7 +3,7 @@ index 9312916..c8ba234 100644
 --- a/minisci/__init__.py
 +++ b/minisci/__init__.py
 @@ -1,5 +1,5 @@
- """minisci: a tiny numerical library used to demonstrate heldout end to end."""
+ """minisci: a tiny numerical library used to demonstrate agentexam end to end."""
 -from .stats import mean, var, logsumexp
 +from .stats import mean, var, logsumexp, softmax, weighted_mean
  from .distance import chebyshev

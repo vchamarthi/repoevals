@@ -1,7 +1,7 @@
-# Task specification (heldout task format v1)
+# Task specification (agentexam task format v1)
 
 One directory per task under `[repo].tasks`. The layout is a superset of the
-[Harbor](https://harborframework.com) task directory (`task.toml` + `instruction.md`), and `heldout export harbor`
+[Harbor](https://harborframework.com) task directory (`task.toml` + `instruction.md`), and `agentexam export harbor`
 produces a Harbor-native copy.
 
 ```
@@ -37,7 +37,7 @@ tags = ["kmeans", "cpu"]
 
 [environment]
 requires = { cpus = 4, cpu_flags = ["avx512f"], cpu_vendors = ["GenuineIntel"], devices = ["gpu"] }
-# unmet requirements -> status "skipped"; devices are matched against $HELDOUT_DEVICES (default "cpu")
+# unmet requirements -> status "skipped"; devices are matched against $AGENTEXAM_DEVICES (default "cpu")
 
 [agent]
 timeout_sec = 3600
@@ -83,7 +83,7 @@ The agent's final message must end with a fenced JSON array (or `{"findings": [.
 A finding matches a seed if it is in the same file and its rule/message matches `kw` within `kw_line_tol` lines,
 or its line is within `line_tol`; `"file": "*"` seeds require the keyword. Each finding credits at most one seed.
 
-## Run directory (produced by `heldout prepare` / `heldout run`)
+## Run directory (produced by `agentexam prepare` / `agentexam run`)
 
 ```
 run_dir/
@@ -93,12 +93,12 @@ run_dir/
   meta.json        start_sha, base_sha, arm, agent, model, repeat, timings
   events.jsonl     normalized trace: command / read / edit / message / usage events
   answer.txt       the agent's final message
-  grade.json       heldout.grade/v1
+  grade.json       agentexam.grade/v1
 ```
 
-`prepare` also saves a bare copy of the workspace history in `run_dir/.heldout/start.git`. Graders diff the files
+`prepare` also saves a bare copy of the workspace history in `run_dir/.agentexam/start.git`. Graders diff the files
 on disk against it with a private index, so skip-worktree flags, `.git/info/exclude`, rewritten or deleted history in
 the workspace do not change what is graded.
 
 Any external harness can produce `workspace/`, `answer.txt`, `events.jsonl` and `meta.json` and call
-`heldout grade <run_dir>`; heldout does not need to run the agent itself.
+`agentexam grade <run_dir>`; agentexam does not need to run the agent itself.

@@ -5,7 +5,7 @@ type = "mutation"
 targets = []                    # optional fixed targets; else the agent's JSON answer {"targets": [...]};
                                 # else the test files the agent added or changed
 min_kill = 0.8                  # fraction of valid mutants the agent's tests must kill
-oracle_min_kill = 1.0           # `heldout check`: the reference tests must kill at least this fraction
+oracle_min_kill = 1.0           # `agentexam check`: the reference tests must kill at least this fraction
 mutants_dir = "mutants"         # *.patch, each one fault in library code
 
 Algorithm:
