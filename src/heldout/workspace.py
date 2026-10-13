@@ -1,0 +1,108 @@
+"""Prepare a history-free workspace for one task run.
+
+    run_dir/
+      workspace/     snapshot of the source repo at task.base, eval files removed, setup.patch applied,
+                     arm applied, committed as a single root commit (review tasks: + one commit with the change)
+      task.json      resolved task (what the run was prepared from)
+      meta.json      start_sha, base, arm, timestamps; later agent/model/usage
+      instruction.md the prompt the agent receives
+
+The agent never sees: git history (so it cannot mine the upstream fix), the task directory, hidden tests, oracles,
+mutants, or this framework's config. `leak_scan` verifies this after preparation.
+"""
+from __future__ import annotations
+
+import io
+import json
+import shutil
+import tarfile
+import time
+from pathlib import Path
+
+from .config import RepoConfig
+from .integrity import leak_scan
+from .task import Task
+from .util import apply_patch, git, git_commit, git_init_snapshot, glob_match
+
+ARMS_HELP = """arms: guidance:raw (as checked in, default) | guidance:none (all guidance files deleted) |
+guidance:file=<path> (replace the root AGENTS.md with <path>, delete the rest)"""
+
+
+def _extract(source: Path, rev: str, dest: Path) -> None:
+    import subprocess
+    p = subprocess.run(["git", "-C", str(source), "archive", "--format=tar", rev], capture_output=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"git archive {rev} failed in {source}: {p.stderr.decode(errors='replace')[:500]}")
+    with tarfile.open(fileobj=io.BytesIO(p.stdout)) as tf:
+        try:
+            tf.extractall(dest, filter="data")  # type: ignore[call-arg]
+        except TypeError:  # Python < 3.12
+            tf.extractall(dest)
+
+
+def apply_arm(ws: Path, cfg: RepoConfig, arm: str) -> list[str]:
+    """Mutate the guidance files according to the arm; returns the files removed/replaced."""
+    if arm in ("", "guidance:raw", "raw"):
+        return []
+    files = [p.relative_to(ws).as_posix() for p in ws.rglob("*") if p.is_file()
+             and ".git/" not in p.relative_to(ws).as_posix() + "/"
+             and glob_match(p.relative_to(ws).as_posix(), cfg.guidance_globs)]
+    for f in files:
+        (ws / f).unlink()
+    if arm in ("guidance:none", "none"):
+        return files
+    if arm.startswith("guidance:file="):
+        src = Path(arm.split("=", 1)[1]).expanduser()
+        shutil.copy2(src, ws / "AGENTS.md")
+        return files + ["AGENTS.md"]
+    raise ValueError(f"unknown arm {arm!r}. {ARMS_HELP}")
+
+
+def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str = "guidance:raw") -> dict:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ws = run_dir / "workspace"
+    if ws.exists():
+        shutil.rmtree(ws)
+    ws.mkdir()
+    base_sha = git(source, "rev-parse", f"{task.base}^{{commit}}", check=True).out.strip()
+    _extract(source, base_sha, ws)
+    removed = []
+    for p in sorted(ws.rglob("*"), reverse=True):
+        rel = p.relative_to(ws).as_posix()
+        if p.is_file() and glob_match(rel, cfg.eval_globs):
+            p.unlink()
+            removed.append(rel)
+    for d in sorted((p for p in ws.rglob("*") if p.is_dir()), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+    if task.has("setup.patch"):
+        ap = apply_patch(ws, task.file("setup.patch"))  # git apply works outside a repository too
+        if not ap.ok:
+            raise RuntimeError(f"{task.id}: setup.patch does not apply at {base_sha[:12]}: {ap.out[:1000]}")
+    arm_files = apply_arm(ws, cfg, arm)
+    start = git_init_snapshot(ws, "workspace")
+    if task.has(task.grader.get("review_patch", "review.patch")):
+        ap = apply_patch(ws, task.file(task.grader.get("review_patch", "review.patch")))
+        if not ap.ok:
+            raise RuntimeError(f"{task.id}: review.patch does not apply: {ap.out[:1000]}")
+        start = git_commit(ws, task.grader.get("review_title", "Change under review"))
+    git(ws, "reflog", "expire", "--expire=now", "--all")
+    git(ws, "gc", "-q", "--prune=now")
+    problems = leak_scan(ws)
+    if problems:
+        raise RuntimeError(f"{task.id}: workspace leaks: {problems}")
+    (run_dir / "instruction.md").write_text(task.instruction)
+    (run_dir / "task.json").write_text(json.dumps(task.to_json(), indent=1))
+    meta = {"task": task.id, "task_dir": str(task.dir), "base": task.base, "base_sha": base_sha, "start_sha": start,
+            "arm": arm, "arm_files": arm_files, "eval_files_removed": len(removed),
+            "prepared_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "repo": cfg.id}
+    (run_dir / "meta.json").write_text(json.dumps(meta, indent=1))
+    return meta
+
+
+def update_meta(run_dir: Path, **kw) -> dict:
+    p = run_dir / "meta.json"
+    meta = json.loads(p.read_text()) if p.exists() else {}
+    meta.update(kw)
+    p.write_text(json.dumps(meta, indent=1))
+    return meta

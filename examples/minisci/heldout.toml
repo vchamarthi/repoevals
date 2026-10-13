@@ -1,0 +1,14 @@
+[repo]
+id = "minisci"
+tasks = ".agent-evals/tasks"
+
+[guidance]
+globs = ["**/AGENTS.md"]
+
+[policy]
+test_globs = ["tests/**"]
+library_globs = ["minisci/**"]
+
+[test]
+adapter = "pytest"
+timeout_sec = 300

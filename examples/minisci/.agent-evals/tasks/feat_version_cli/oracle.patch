@@ -1,0 +1,22 @@
+diff --git a/minisci/__main__.py b/minisci/__main__.py
+new file mode 100644
+index 0000000..2005212
+--- /dev/null
++++ b/minisci/__main__.py
+@@ -0,0 +1,16 @@
++import argparse
++
++from . import __version__
++
++
++def main(argv=None):
++    ap = argparse.ArgumentParser(prog="minisci")
++    ap.add_argument("--version", action="store_true", help="print the version and exit")
++    args = ap.parse_args(argv)
++    if args.version:
++        print(__version__)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

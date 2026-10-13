@@ -1,0 +1,101 @@
+name: heldout
+description: Validate, self-check, run and report deterministic AI-coding-agent evals defined in your repository.
+author: vchamarthi
+branding:
+  icon: check-square
+  color: blue
+
+inputs:
+  command:
+    description: "validate | check | run | report | guidance-lint"
+    default: check
+  tasks:
+    description: Space-separated task ids / prefixes (id*) / family:<f> / tag:<t>. Empty = all tasks.
+    default: ""
+  changed-only:
+    description: "check: only tasks whose directory changed relative to the PR base (falls back to all)"
+    default: "true"
+  config:
+    description: Path to heldout.toml (default: search from the repository root)
+    default: ""
+  repeats:
+    description: "check: oracle repeats (flakiness). run: repeats per task and arm."
+    default: "1"
+  agent:
+    description: "run: claude-code | codex | noop | cmd:<template>"
+    default: noop
+  model:
+    description: "run: model id passed to the agent CLI"
+    default: ""
+  arms:
+    description: "run: space-separated arms, e.g. 'guidance:raw guidance:none'"
+    default: "guidance:raw"
+  runs-dir:
+    description: "run/report: directory for run outputs"
+    default: heldout-runs
+  python-version:
+    description: Python used to run heldout itself
+    default: "3.12"
+  heldout-version:
+    description: "pip requirement for heldout (default: this action's checkout)"
+    default: ""
+
+outputs:
+  report:
+    description: Path of the Markdown report (run/report)
+    value: ${{ steps.main.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install heldout
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.heldout-version }}" ]; then
+          python -m pip install -q "${{ inputs.heldout-version }}"
+        else
+          python -m pip install -q "${{ github.action_path }}"
+        fi
+    - name: heldout ${{ inputs.command }}
+      id: main
+      shell: bash
+      env:
+        HO_CMD: ${{ inputs.command }}
+        HO_TASKS: ${{ inputs.tasks }}
+        HO_CHANGED: ${{ inputs.changed-only }}
+        HO_CONFIG: ${{ inputs.config }}
+        HO_REPEATS: ${{ inputs.repeats }}
+        HO_AGENT: ${{ inputs.agent }}
+        HO_MODEL: ${{ inputs.model }}
+        HO_ARMS: ${{ inputs.arms }}
+        HO_RUNS: ${{ inputs.runs-dir }}
+        HO_BASE: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        cfg=()
+        [ -n "$HO_CONFIG" ] && cfg=(--config "$HO_CONFIG")
+        tasks=($HO_TASKS)
+        if [ "$HO_CMD" = "check" ] && [ "$HO_CHANGED" = "true" ] && [ -n "$HO_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
+          tdir=$(python -c "from heldout.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
+          git fetch -q --depth=1 origin "$HO_BASE" || true
+          mapfile -t tasks < <(git diff --name-only "$HO_BASE" -- "$tdir" | awk -F/ -v d="$tdir" '{sub(d"/","",$0); split($0,a,"/"); print a[1]}' | sort -u)
+          echo "changed tasks: ${tasks[*]:-<none, checking all>}"
+        fi
+        case "$HO_CMD" in
+          validate)      heldout "${cfg[@]}" validate "${tasks[@]}" ;;
+          check)         heldout "${cfg[@]}" check --repeats "$HO_REPEATS" --json heldout-check.json "${tasks[@]}" ;;
+          guidance-lint) heldout "${cfg[@]}" guidance-lint ;;
+          run)
+            arms=(); for a in $HO_ARMS; do arms+=(--arm "$a"); done
+            model=(); [ -n "$HO_MODEL" ] && model=(--model "$HO_MODEL")
+            heldout "${cfg[@]}" run --agent "$HO_AGENT" "${model[@]}" "${arms[@]}" --repeats "$HO_REPEATS" --out "$HO_RUNS" "${tasks[@]}"
+            heldout report "$HO_RUNS" --out "$HO_RUNS/report"
+            echo "report=$HO_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
+          report)
+            heldout report "$HO_RUNS" --out "$HO_RUNS/report"
+            echo "report=$HO_RUNS/report/summary.md" >> "$GITHUB_OUTPUT" ;;
+          *) echo "unknown command $HO_CMD"; exit 2 ;;
+        esac

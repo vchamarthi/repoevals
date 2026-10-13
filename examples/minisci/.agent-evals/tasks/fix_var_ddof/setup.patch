@@ -1,0 +1,13 @@
+diff --git a/minisci/stats.py b/minisci/stats.py
+index dfe87f0..93655f7 100644
+--- a/minisci/stats.py
++++ b/minisci/stats.py
+@@ -15,7 +15,7 @@ def var(x, ddof=0):
+     if n - ddof <= 0:
+         raise ValueError("ddof must be smaller than the number of elements")
+     m = x.sum() / n
+-    return float(((x - m) ** 2).sum() / (n - ddof))
++    return float(((x - m) ** 2).sum() / n)
+ 
+ 
+ def logsumexp(x):

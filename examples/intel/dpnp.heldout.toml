@@ -1,0 +1,22 @@
+# Starter config for IntelPython/dpnp (copy to the repo root as heldout.toml). Untested scaffold.
+[repo]
+id = "dpnp"
+url = "https://github.com/IntelPython/dpnp"
+tasks = ".agent-evals/tasks"
+
+[guidance]
+globs = ["**/AGENTS.md", "**/CLAUDE.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
+
+[policy]
+test_globs = ["dpnp/tests/**", "dpnp/tensor/tests/**"]
+library_globs = ["dpnp/**"]
+# skip tables are a free source of hidden tests and an attack surface: always reset before grading
+protected_globs = ["dpnp/tests/skipped_tests*.tbl", "dpnp/tests/third_party/**"]
+
+[test]
+adapter = "pytest"
+# full SYCL build is slow (tens of minutes cold); python-only tasks can set [grader].build = "" to reuse the base build
+build = "python scripts/build_locally.py --verbose"
+command = "python -m pytest -q -p no:randomly -m 'not slow' {targets}"
+timeout_sec = 3600
+env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu", OMP_NUM_THREADS = "2", SYCL_CACHE_PERSISTENT = "0" }

@@ -1,0 +1,40 @@
+diff --git a/minisci/__init__.py b/minisci/__init__.py
+index 9312916..c8ba234 100644
+--- a/minisci/__init__.py
++++ b/minisci/__init__.py
+@@ -1,5 +1,5 @@
+ """minisci: a tiny numerical library used to demonstrate heldout end to end."""
+-from .stats import mean, var, logsumexp
++from .stats import mean, var, logsumexp, softmax, weighted_mean
+ from .distance import chebyshev
+ 
+ __all__ = ["mean", "var", "logsumexp", "chebyshev"]
+diff --git a/minisci/__main__.py b/minisci/__main__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/minisci/stats.py b/minisci/stats.py
+index dfe87f0..32d4fc7 100644
+--- a/minisci/stats.py
++++ b/minisci/stats.py
+@@ -27,3 +27,21 @@ def logsumexp(x):
+     if not np.isfinite(m):
+         return float(m)
+     return float(m + np.log(np.exp(x - m).sum()))
++
++
++def softmax(x, axis=-1):
++    """Softmax along `axis`."""
++    x = np.asarray(x, dtype=np.float64)
++    print("softmax input", x.shape)
++    e = np.exp(x)
++    return e / e.sum()
++
++
++def weighted_mean(x, w):
++    """Mean of x weighted by w."""
++    x = np.asarray(x, dtype=np.float64)
++    w = np.asarray(w, dtype=np.float64)
++    total = 0.0
++    for i in range(len(x) - 1):
++        total += x[i] * w[i]
++    return float(total / w.sum())

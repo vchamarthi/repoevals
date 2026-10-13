@@ -1,0 +1,20 @@
+version = "1.0"
+
+[metadata]
+family = "test"
+base = "HEAD"
+created = "2026-10-13"
+source = "synthetic"
+difficulty = "medium"
+tags = ["distance", "mutation"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 600
+
+[grader]
+type = "mutation"
+min_kill = 0.8
+oracle_min_kill = 1.0

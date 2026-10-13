@@ -1,0 +1,18 @@
+{
+  "seeds": [
+    {"id": "S1_overflow", "class": "numerical", "file": "minisci/stats.py", "lines": [36, 37],
+     "kw": "overflow|stab|subtract.*max|max.*subtract|\\binf\\b|nan|large (input|value)"},
+    {"id": "S2_debug_print", "class": "hygiene", "file": "minisci/stats.py", "lines": [35],
+     "kw": "print|debug|stdout|logging"},
+    {"id": "S3_axis_ignored", "class": "api", "file": "minisci/stats.py", "lines": [37, 32],
+     "kw": "axis|keepdims|multi-?dim|2-?d|ignored"},
+    {"id": "S4_off_by_one", "class": "correctness", "file": "minisci/stats.py", "lines": [45, 46],
+     "kw": "off.by.one|range\\(len|last (element|item|value)|skips?|len\\(x\\) ?- ?1"},
+    {"id": "S5_length_check", "class": "correctness", "file": "minisci/stats.py", "lines": [42, 43, 44],
+     "kw": "length|shape|mismatch|same size|broadcast"}
+  ],
+  "decoys": [
+    {"id": "D1_float64_cast", "file": "minisci/stats.py", "lines": [34, 42, 43],
+     "kw": "float64|dtype|asarray|cast|conver"}
+  ]
+}

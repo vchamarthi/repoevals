@@ -1,0 +1,13 @@
+diff --git a/minisci/stats.py b/minisci/stats.py
+index dfe87f0..b70500d 100644
+--- a/minisci/stats.py
++++ b/minisci/stats.py
+@@ -23,7 +23,4 @@ def logsumexp(x):
+     x = np.asarray(x, dtype=np.float64)
+     if x.size == 0:
+         return float("-inf")
+-    m = x.max()
+-    if not np.isfinite(m):
+-        return float(m)
+-    return float(m + np.log(np.exp(x - m).sum()))
++    return float(np.log(np.exp(x).sum()))

@@ -1,0 +1,17 @@
+version = "1.0"
+
+[metadata]
+family = "review"
+base = "HEAD"
+created = "2026-10-13"
+source = "synthetic seeded review"
+difficulty = "medium"
+tags = ["review", "seeded"]
+
+[agent]
+timeout_sec = 900
+
+[grader]
+type = "review_seeded"
+review_title = "Add softmax and weighted_mean"
+gate = ["recall>=0.6", "precision>=0.5", "decoys_flagged<=0"]

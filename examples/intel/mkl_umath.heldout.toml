@@ -1,0 +1,18 @@
+# Starter config for IntelPython/mkl_umath (meson-python + mkl-devel). Untested scaffold.
+[repo]
+id = "mkl_umath"
+url = "https://github.com/IntelPython/mkl_umath"
+
+[guidance]
+globs = ["**/AGENTS.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
+
+[policy]
+test_globs = ["mkl_umath/tests/**"]
+library_globs = ["mkl_umath/**"]
+
+[test]
+adapter = "pytest"
+build = "python -m pip install -e . --no-build-isolation -q"
+command = "python -m pytest -q -p no:randomly {targets}"
+timeout_sec = 1800
+env = { MKL_NUM_THREADS = "2", OMP_NUM_THREADS = "2" }

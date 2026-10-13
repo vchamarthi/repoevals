@@ -1,0 +1,12 @@
+[
+  {"file": "minisci/stats.py", "line": 36, "severity": "major", "rule": "numerical-stability",
+   "message": "np.exp(x) overflows for large inputs; subtract the max before exponentiating."},
+  {"file": "minisci/stats.py", "line": 35, "severity": "minor", "rule": "debug-output",
+   "message": "Remove the debug print."},
+  {"file": "minisci/stats.py", "line": 37, "severity": "major", "rule": "api",
+   "message": "The axis argument is ignored: e.sum() reduces over all elements."},
+  {"file": "minisci/stats.py", "line": 45, "severity": "blocker", "rule": "off-by-one",
+   "message": "range(len(x) - 1) skips the last element."},
+  {"file": "minisci/stats.py", "line": 43, "severity": "major", "rule": "validation",
+   "message": "No check that x and w have the same length."}
+]

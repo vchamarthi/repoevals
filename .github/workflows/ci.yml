@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[dev]'
+      - run: git config --global user.name ci && git config --global user.email ci@localhost
+      - run: python -m pytest -q
+
+  action-self-test:
+    # the composite action against the bundled example repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make the example a git repository
+        run: |
+          cp -R examples/minisci "$RUNNER_TEMP/minisci"
+          cd "$RUNNER_TEMP/minisci"
+          git init -q -b main && git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm init
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install numpy pytest
+      - name: validate + check
+        working-directory: ${{ runner.temp }}/minisci
+        run: |
+          python -m pip install -q "$GITHUB_WORKSPACE"
+          heldout validate
+          heldout check --repeats 2
+          heldout guidance-lint

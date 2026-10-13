@@ -1,0 +1,15 @@
+# Starter config for IntelPython/dpctl. Untested scaffold.
+[repo]
+id = "dpctl"
+url = "https://github.com/IntelPython/dpctl"
+
+[policy]
+test_globs = ["dpctl/tests/**", "libsyclinterface/tests/**"]
+library_globs = ["dpctl/**", "libsyclinterface/**"]
+
+[test]
+adapter = "pytest"
+build = "python scripts/build_locally.py --verbose"
+command = "python -m pytest -q -p no:randomly {targets}"
+timeout_sec = 3600
+env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu" }

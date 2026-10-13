@@ -1,0 +1,17 @@
+version = "1.0"
+
+[metadata]
+family = "review"
+base = "HEAD"
+created = "2026-10-13"
+source = "synthetic clean control"
+difficulty = "easy"
+tags = ["review", "control"]
+
+[agent]
+timeout_sec = 900
+
+[grader]
+type = "review_seeded"
+review_title = "Document chebyshev and add a test"
+max_findings_clean = 2

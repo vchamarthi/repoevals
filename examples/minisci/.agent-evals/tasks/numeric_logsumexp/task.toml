@@ -1,0 +1,25 @@
+version = "1.0"
+
+[metadata]
+family = "numeric"
+base = "HEAD"
+created = "2026-10-13"
+source = "synthetic"
+difficulty = "easy"
+tags = ["stability", "overflow"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 300
+
+[grader]
+type = "numeric"
+probe = "probe.py"
+python = "python3"
+min_case_pass = 1.0
+targets = ["tests/test_basic.py"]
+
+[grader.tolerances]
+float64 = [1e-12, 1e-300]

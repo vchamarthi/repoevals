@@ -1,0 +1,24 @@
+version = "1.0"
+
+[metadata]
+family = "feature"
+base = "HEAD"
+created = "2026-10-13"
+source = "synthetic"
+difficulty = "easy"
+tags = ["cli"]
+
+[agent]
+timeout_sec = 600
+
+[verifier]
+timeout_sec = 120
+
+[grader]
+type = "command"
+commands = [
+  "test \"$(python3 -m minisci --version)\" = \"$(python3 -c 'import minisci; print(minisci.__version__)')\"",
+  "python3 -m minisci --help",
+  "python3 -m pytest -q tests/test_basic.py",
+]
+gate = ["commands_ok"]

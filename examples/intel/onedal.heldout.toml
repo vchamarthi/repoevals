@@ -1,0 +1,24 @@
+# Mapping of uxlfoundation/oneDAL PR #3818 (dev/agent_evals) onto heldout. Untested scaffold.
+# The PR's task.json files must be converted to task.toml (converter on the roadmap). Grader correspondence: test_pass/test_pass_files -> hidden_tests, mutation -> mutation,
+# review -> review_seeded (manifest format compatible: seeds/decoys with file/lines/kw),
+# review replay -> review_replay (gold threads), bazel_cmd/release_path/make_artifact -> command.
+[repo]
+id = "onedal"
+url = "https://github.com/uxlfoundation/oneDAL"
+tasks = "dev/agent_evals/tasks"
+
+[guidance]
+globs = ["**/AGENTS.md", ".github/instructions/*.md", ".github/copilot-instructions.md"]
+
+[policy]
+test_globs = ["**/test/**", "**/*_test.cpp", "**/tests/**"]
+library_globs = ["cpp/**"]
+
+[test]
+adapter = "bazel"
+command = "bazel test --nocache_test_results --test_output=errors {targets}"
+timeout_sec = 7200
+
+[environment]
+dockerfile = "dev/agent_evals/Dockerfile"
+network = "none"

@@ -1,0 +1,22 @@
+version = "1.0"
+
+[metadata]
+family = "fix"
+base = "HEAD"
+created = "2026-10-13"
+source = "synthetic (SWE-smith style injected bug)"
+difficulty = "easy"
+tags = ["stats", "numpy-semantics"]
+
+[agent]
+timeout_sec = 900
+
+[verifier]
+timeout_sec = 300
+
+[grader]
+type = "hidden_tests"
+targets = ["tests/test_var_hidden.py"]
+regression_targets = ["tests/test_basic.py"]
+root_cause_files = ["minisci/stats.py"]
+gate = ["strict_pass"]

@@ -1,0 +1,31 @@
+diff --git a/minisci/__main__.py b/minisci/__main__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/minisci/distance.py b/minisci/distance.py
+index 2ddef9b..2e73e22 100644
+--- a/minisci/distance.py
++++ b/minisci/distance.py
+@@ -2,7 +2,10 @@ import numpy as np
+ 
+ 
+ def chebyshev(a, b):
+-    """Chebyshev (L-infinity) distance between two vectors of equal length."""
++    """Chebyshev (L-infinity) distance between two vectors of equal length.
++
++    Returns ``max(|a - b|)``; the distance between two empty vectors is ``0.0``.
++    """
+     a = np.asarray(a, dtype=np.float64)
+     b = np.asarray(b, dtype=np.float64)
+     if a.shape != b.shape:
+diff --git a/tests/test_basic.py b/tests/test_basic.py
+index 7af1359..fbe4f29 100644
+--- a/tests/test_basic.py
++++ b/tests/test_basic.py
+@@ -14,3 +14,7 @@ def test_var_population():
+ def test_mean_empty():
+     with pytest.raises(ValueError):
+         minisci.mean([])
++
++
++def test_chebyshev_simple():
++    assert minisci.chebyshev([0.0, 3.0], [1.0, -1.0]) == 4.0

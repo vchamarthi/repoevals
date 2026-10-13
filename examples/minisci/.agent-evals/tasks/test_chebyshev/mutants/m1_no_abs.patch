@@ -1,0 +1,10 @@
+diff --git a/minisci/distance.py b/minisci/distance.py
+index 2ddef9b..cb256a3 100644
+--- a/minisci/distance.py
++++ b/minisci/distance.py
+@@ -9,4 +9,4 @@ def chebyshev(a, b):
+         raise ValueError("shape mismatch")
+     if a.size == 0:
+         return 0.0
+-    return float(np.abs(a - b).max())
++    return float((a - b).max())
