@@ -283,3 +283,13 @@ def test_usage_limit_mid_run_is_infra_error():
     assert classify(0, False, msg, msg, acted)[0] == "infra_error"
     long_review = "The change has a session limit option that is ignored. " + "x" * 700
     assert classify(0, False, long_review, long_review, acted)[0] == "ok"
+
+
+def test_setup_failure_message_includes_log_tail(minisci_repo, tmp_path):
+    with open(minisci_repo / "repoevals.toml", "a") as fh:
+        fh.write('\n[environment]\nsetup = "echo building; echo BackendUnavailable: no backend >&2; exit 2"\n')
+    cfg = _cfg(minisci_repo)
+    t = load_task(cfg.tasks_dir / "fix_var_ddof")
+    with pytest.raises(RuntimeError, match="rc=2") as exc:
+        prepare(cfg, t, tmp_path / "run", minisci_repo)
+    assert "BackendUnavailable: no backend" in str(exc.value)
