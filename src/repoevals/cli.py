@@ -26,7 +26,8 @@ from .config import load_config
 from .task import discover, load_task
 from .util import git
 
-TASKS_HELP = "task ids, id prefixes ending in *, family:<name> or tag:<name> (default: all tasks)"
+TASKS_HELP = ("task ids, id prefixes ending in *, family:<name> or tag:<name>; prefix with ! to exclude "
+              "(default: all tasks)")
 SOURCE_HELP = "repository with full history to snapshot task bases from (default: the config's repository)"
 
 INIT_TOML = """# repoevals configuration — see https://github.com/vchamarthi/repoevals/blob/main/docs/configuration.md

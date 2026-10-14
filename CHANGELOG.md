@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Task selection supports exclusions: `!tag:legacy-env`, `!fix_*`.
 - `repoevals guidance suggest`: mine graded runs for problems agent guidance could prevent (failing commands,
   environment errors, rediscovered files, rule violations, tasks worse with guidance, stale references, files an
   agent would not read); writes evidence and a draft, deterministically or with `--draft-with claude-code|codex|cmd:`.

@@ -104,3 +104,14 @@ def test_doctor_with_test_target(repo, capsys):
     out = capsys.readouterr().out
     assert "test run on the current tree" in out and rc in (0, 1)
     assert Path(repo / "repoevals.toml").exists()
+
+
+def test_task_selection_exclusions(repo):
+    from repoevals.config import load_config
+    from repoevals.task import discover
+    cfg = load_config(repo / "repoevals.toml")
+    allids = {t.id for t in discover(cfg.tasks_dir)}
+    assert {t.id for t in discover(cfg.tasks_dir, ["!review_*"])} == {i for i in allids if not i.startswith("review_")}
+    assert {t.id for t in discover(cfg.tasks_dir, ["family:review", "!review_clean_control"])} == {
+        "review_seeded_softmax"}
+    assert discover(cfg.tasks_dir, ["!family:fix", "fix_var_ddof"]) == []

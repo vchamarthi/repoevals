@@ -239,4 +239,5 @@ Metrics: `speedup`, `speedup_ci`, `noise_cv_base`, and raw timings.
 ## Selecting tasks
 
 Commands that take tasks accept ids (`fix_var_ddof`), prefixes (`fix_*`), families (`family:review`) and tags
-(`tag:kmeans`). With no selection, all tasks are used.
+(`tag:kmeans`). Prefix an entry with `!` to exclude it (`!tag:legacy-env`; with only exclusions, everything else is
+selected). With no selection, all tasks are used.

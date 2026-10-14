@@ -132,7 +132,8 @@ def load_task(task_dir: Path) -> Task:
 
 
 def discover(tasks_dir: Path, select: list[str] | None = None) -> list[Task]:
-    """All tasks under tasks_dir (sorted). `select` filters by id, id prefix, family:<f> or tag:<t>."""
+    """All tasks under tasks_dir (sorted). `select` filters by id, id prefix (`fix_*`), `family:<f>` or `tag:<t>`;
+    entries starting with `!` exclude (`!tag:legacy`). Only exclusions selects everything else."""
     if not tasks_dir.is_dir():
         return []
     tasks = [load_task(d) for d in sorted(tasks_dir.iterdir())
@@ -140,16 +141,16 @@ def discover(tasks_dir: Path, select: list[str] | None = None) -> list[Task]:
     if not select:
         return tasks
 
-    def keep(t: Task) -> bool:
-        for s in select:
-            if s.startswith("family:") and t.family == s[7:]:
-                return True
-            if s.startswith("tag:") and s[4:] in t.metadata.get("tags", []):
-                return True
-            if t.id == s or (s.endswith("*") and t.id.startswith(s[:-1])):
-                return True
-        return False
-    return [t for t in tasks if keep(t)]
+    def matches(t: Task, s: str) -> bool:
+        if s.startswith("family:"):
+            return t.family == s[7:]
+        if s.startswith("tag:"):
+            return s[4:] in t.metadata.get("tags", [])
+        return t.id == s or (s.endswith("*") and t.id.startswith(s[:-1]))
+    include = [s for s in select if not s.startswith("!")]
+    exclude = [s[1:] for s in select if s.startswith("!")]
+    return [t for t in tasks if (not include or any(matches(t, s) for s in include))
+            and not any(matches(t, s) for s in exclude)]
 
 
 def _cpu_info() -> tuple[set[str], str]:
