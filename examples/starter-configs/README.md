@@ -44,6 +44,19 @@ To evaluate without a SYCL compiler, install a released wheel and author tasks a
 (`repoevals author mine --release-base <tag>`, `author fix --base <tag> --extract-tests`); copy the wheel's compiled
 modules into each workspace with `[environment].setup`.
 
+## Evaluating older revisions of a project
+
+Tasks start from the revision before a fix, so one task set can span several build systems and dependency
+generations (mkl_fft moved from setuptools to meson-python; older sources need an older NumPy). What to do:
+
+- Put every build requirement the oldest base needs in the environment (e.g. `setuptools`, `Cython<3.3`).
+- Tag tasks that need a different environment (`tags = ["legacy-env"]`) and check them in their own CI profile:
+  `repoevals check '!tag:legacy-env'` in the default job, `repoevals check tag:legacy-env` in a job that pins the
+  older NumPy (see mkl_fft's `.github/workflows/repoevals.yml` in the fork for a matrix example).
+- Drop tasks whose base cannot be built at all on a current Python.
+- pip's MKL ships `libmkl_rt.so.2` without the `libmkl_rt.so` symlink that `-lmkl_rt` needs; create it in the CI
+  environment.
+
 ## Tips for numerical libraries
 
 - Protect skip and deselect lists with `[policy].protected_globs` so they cannot be edited to hide failures.

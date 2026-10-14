@@ -6,7 +6,7 @@ an agent and wire everything into CI.
 ## 1. Install
 
 ```bash
-pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.2.0"
+pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.3.0"
 repoevals --version
 ```
 
@@ -106,6 +106,10 @@ repoevals check --repeats 3        # null run fails, reference passes 3 times, a
 
 Fix every `ERROR` and `PROBLEM` before running agents. `WARN` lines point at likely problems, such as an
 instruction that mentions a commit hash or links to the fixing pull request.
+
+Tasks from older history can need older dependencies or build tools. Tag them (`tags = ["legacy-env"]`), check them in
+a separate CI job (`repoevals check tag:legacy-env`, and `'!tag:legacy-env'` for the rest), and drop tasks whose base
+cannot be built on a current Python.
 
 Good tasks:
 

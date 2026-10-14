@@ -11,12 +11,12 @@ test_globs = ["mkl_fft/tests/**"]
 library_globs = ["mkl_fft/**"]
 
 [environment]
-setup = "python -m pip install -e . --no-build-isolation -q"
+# MKL comes from PyPI (`mkl-devel`); older setuptools-based revisions need MKLROOT, which is the Python prefix
+setup = "MKLROOT=$(python -c \"import sys; print(sys.prefix)\") pip install -q --no-build-isolation --no-deps -e ."
 
 [test]
 adapter = "pytest"
-# meson-python editable installs rebuild on import; an explicit build is only needed for build-file changes
-build = "python -m pip install -e . --no-build-isolation -q"
+build = "MKLROOT=$(python -c \"import sys; print(sys.prefix)\") pip install -q --no-build-isolation --no-deps -e ."
 rebuild_globs = ["**/meson.build", "pyproject.toml", "**/*.src", "**/*.pyx", "**/*.pxd", "**/*.c", "**/*.h"]
 command = "python -m pytest -q -p no:randomly {targets}"
 timeout_sec = 1800

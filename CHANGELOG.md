@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
 ### Added
 
+- Found while evaluating dpnp and mkl_fft: release-based task authoring (`author fix --base`, `--extract-tests`,
+  `author mine --release-base`, `author review-replay --base`), `[repo].upstream`, setup environment variables,
+  `report --compare`, package versions recorded in runs, and mkl_fft/dpnp starter configurations.
 - Task selection supports exclusions: `!tag:legacy-env`, `!fix_*`.
 - `repoevals guidance suggest`: mine graded runs for problems agent guidance could prevent (failing commands,
   environment errors, rediscovered files, rule violations, tasks worse with guidance, stale references, files an
@@ -116,6 +120,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Harbor task export and agent guidance lint.
 - GitHub Action and example repository.
 
-[Unreleased]: https://github.com/vchamarthi/repoevals/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/vchamarthi/repoevals/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/vchamarthi/repoevals/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vchamarthi/repoevals/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vchamarthi/repoevals/releases/tag/v0.1.0
