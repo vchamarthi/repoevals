@@ -240,3 +240,18 @@ def test_report_names_cmd_agents_briefly():
     from repoevals.report import config_key
     assert config_key({"agent": "cmd:python /long/path/agent.py x {prompt_file}", "arm": "guidance:raw",
                        "label": "oracle"}) == "oracle|cmd|-|guidance:raw"
+
+
+def test_report_compare_restricts_pairs():
+    grades = [{"task": f"t{i}", "agent": ag, "arm": arm, "status": "pass", "pass": True}
+              for i in range(3) for ag in ("a", "b") for arm in ("guidance:raw", "guidance:none")]
+    s = summarize(grades, compare="arm")
+    assert len(s["comparisons"]) == 2
+    assert all(c["a"].split("|")[0] == c["b"].split("|")[0] for c in s["comparisons"])
+
+
+def test_setup_sees_source_and_task_dir(minisci_repo, tmp_path):
+    with open(minisci_repo / "repoevals.toml", "a") as fh:
+        fh.write('\n[environment]\nsetup = "echo $REPOEVALS_TASK_DIR > .setup-env && test -d $REPOEVALS_SOURCE/.git"\n')
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    assert (ws / ".setup-env").read_text().strip() == str(t.dir)

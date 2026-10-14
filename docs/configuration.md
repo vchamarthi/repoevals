@@ -110,7 +110,7 @@ Targets are always shell-quoted before they are substituted.
 
 | key | default | description |
 |---|---|---|
-| `setup` | `""` | shell command run in every fresh workspace before the agent starts, e.g. a native build. Output goes to `setup.log` in the run directory |
+| `setup` | `""` | shell command run in every fresh workspace before the agent starts, e.g. a native build. Output goes to `setup.log` in the run directory. `$REPOEVALS_ROOT` (your repository), `$REPOEVALS_SOURCE` and `$REPOEVALS_TASK_DIR` are set, so it can call scripts kept in `.agent-evals/` |
 | `setup_timeout_sec` | `7200` | time limit for `setup` |
 | `submodules` | `false` | materialize git submodules at the base revision (initialize them in the source checkout first) |
 | `image` | `""` | container image used by `repoevals run --docker` without an explicit image |

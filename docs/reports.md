@@ -49,6 +49,8 @@ pass/fail gate (status `scored`) contribute their scores (`f1`, `recall`, `kill_
   df.assign(after=df.created >= "2026-03-01").groupby(["agent", "after"])["pass"].mean()
   ```
 - Configurations marked ¹ include runs without an agent trace; their trace-based integrity checks did not run.
+- `report --compare arm` limits the paired comparisons to configurations that differ only in their arm (or
+  `label`, `agent`, `model`), avoiding a comparison of every pair.
 - `report --fail-under 0.5` exits 1 when any configuration's pass rate is below 0.5, for use as a CI gate.
 
 ## Process data

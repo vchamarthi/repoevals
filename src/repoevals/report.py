@@ -50,7 +50,17 @@ def _median(xs: list[float]) -> float | None:
     return round(median(xs), 1) if xs else None
 
 
-def summarize(grades: list[dict]) -> dict:
+DIMENSIONS = ("label", "agent", "model", "arm")
+
+
+def _dims(key: str) -> dict:
+    parts = key.split("|")
+    if len(parts) == 3:
+        parts = [""] + parts
+    return dict(zip(DIMENSIONS, parts, strict=False))
+
+
+def summarize(grades: list[dict], compare: str = "") -> dict:
     by_arm: dict[str, dict[str, list[bool]]] = defaultdict(lambda: defaultdict(list))
     by_family: dict[str, dict[str, dict[str, list[bool]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     scores: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
@@ -114,6 +124,10 @@ def summarize(grades: list[dict]) -> dict:
     comparisons = []
     for i, a in enumerate(names):
         for b in names[i + 1:]:
+            if compare:  # only pairs that differ in exactly that dimension
+                da, db = _dims(a), _dims(b)
+                if [d for d in DIMENSIONS if da[d] != db[d]] != [compare]:
+                    continue
             comparisons.append({"a": a, "b": b, **paired_compare(by_arm[a], by_arm[b])})
     health = []
     all_tasks = sorted({t for res in by_arm.values() for t in res})
@@ -192,9 +206,9 @@ def to_markdown(s: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_report(root: Path, out_dir: Path) -> dict:
+def write_report(root: Path, out_dir: Path, compare: str = "") -> dict:
     grades = load_grades(root)
-    s = summarize(grades)
+    s = summarize(grades, compare)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "results.json").write_text(json.dumps(s, indent=1))
     (out_dir / "summary.md").write_text(to_markdown(s))

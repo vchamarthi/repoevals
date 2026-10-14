@@ -100,6 +100,8 @@ For each chosen commit:
 
    ```bash
    repoevals author fix <commit> --id fix_<area>_<short_name>          # or --family feature
+   # projects tested against prebuilt release binaries: --base <release> --extract-tests
+   # (and find candidates with `repoevals author mine --release-base <release>`)
    ```
 
    This creates `task.toml` (base = the commit's parent), `oracle.patch` (the non-test part of the commit),
@@ -144,7 +146,8 @@ For each chosen commit:
 ### Review replay (needs `gh`)
 
 1. Pick merged pull requests with at least three substantive inline review comments from maintainers.
-2. Scaffold: `repoevals author review-replay <pr_number>`.
+2. Scaffold: `repoevals author review-replay <pr_number>` (add `--base <release>` when tasks must start from a
+   release).
 3. Edit `gold.json`: keep only threads that ask for a change a good reviewer should request. Remove praise,
    questions answered in the thread, and pure style nits. Keep at least three threads, or drop the task.
 

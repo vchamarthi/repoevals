@@ -15,6 +15,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `author fix --extract-tests`: hide only the test functions the fix added or changed, in a standalone module.
 - `[repo].upstream`: task bases missing locally (e.g. release tags in a fork) are fetched from upstream.
 - Integrity check `runner_shadowing` (new `pytest.py`, `sitecustomize.py`, `*.pth`, …).
+- `author review-replay --base REV`: re-apply the reviewed change on another base (e.g. a release) and remap review
+  threads to the new line numbers; unmappable threads are listed under `dropped` in `gold.json`.
+- `report --compare arm|label|agent|model`: only compare configurations that differ in that one dimension.
+- `[environment].setup` runs with `REPOEVALS_SOURCE`, `REPOEVALS_ROOT` and `REPOEVALS_TASK_DIR` set, so setup scripts
+  can live in `.agent-evals/`.
+
+### Changed
+
+- `author fix --extract-tests` keeps only the new or changed test methods of an existing test class (with its
+  fixtures and helpers), instead of the whole class.
 
 ### Fixed
 

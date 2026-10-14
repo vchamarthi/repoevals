@@ -182,7 +182,7 @@ def cmd_run(args) -> int:
 def cmd_report(args) -> int:
     from .report import to_markdown, write_report
     root = Path(args.runs).resolve()
-    s = write_report(root, Path(args.out or root / "report").resolve())
+    s = write_report(root, Path(args.out or root / "report").resolve(), args.compare or "")
     md = to_markdown(s)
     print(md)
     _step_summary_text(md)
@@ -321,7 +321,8 @@ def cmd_author(args) -> int:
               f"`repoevals check {d.name} --repeats 3`")
         return 0
     if sub == "review-replay":
-        d = A.scaffold_replay(cfg, src, args.pr, repo_slug=args.repo or "", task_id=args.id or "", force=args.force)
+        d = A.scaffold_replay(cfg, src, args.pr, repo_slug=args.repo or "", task_id=args.id or "", force=args.force,
+                              target_base=args.base or "")
         print(f"created draft {d}\nnext: prune gold.json to substantive threads, then `repoevals check {d.name}`")
         return 0
     if sub == "mutants":
@@ -440,6 +441,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("runs", help="directory containing run directories (searched recursively)")
     p.add_argument("--out", help="report directory (default: <runs>/report)")
     p.add_argument("--fail-under", type=float, help="exit 1 if any configuration's pass rate is below this")
+    p.add_argument("--compare", choices=["arm", "label", "agent", "model"],
+                   help="only compare configurations that differ in this one dimension")
     p.set_defaults(fn=cmd_report)
     p = sub.add_parser("export", help="export tasks to another format")
     p.add_argument("format", choices=["harbor"])
@@ -479,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("pr", type=int, help="pull request number")
     a.add_argument("--repo", help="owner/name on GitHub (default: from [repo].url or the origin remote)")
     a.add_argument("--id", help="task id (default: review_replay_pr<N>)")
+    a.add_argument("--base", help="re-apply the reviewed change on this revision (e.g. a release) and remap lines")
     a.add_argument("--force", action="store_true", help="overwrite an existing task directory")
     a = asub.add_parser("mutants", help="generate candidate mutants for a Python file into a task")
     a.add_argument("task", help="task id (created if missing)")

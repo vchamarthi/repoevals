@@ -116,7 +116,9 @@ repoevals author review-replay 3182
 ```
 
 This picks the revision of the pull request that received the most inline review comments, saves the change as
-`review.patch` and the reviewers' comments as `gold.json`. Edit `gold.json` to keep only comments that ask for a
+`review.patch` and the reviewers' comments as `gold.json`. With `--base <release>`, the reviewed change is
+re-applied on that release and each comment's line is remapped; comments that cannot be mapped are listed under
+`dropped`. Edit `gold.json` to keep only comments that ask for a
 change.
 
 ### Scaffold a test-writing task

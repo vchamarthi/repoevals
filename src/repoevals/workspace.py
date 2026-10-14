@@ -166,8 +166,10 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     setup = str(cfg.environment.get("setup", "")).strip()
     if setup:  # e.g. a native build, so the agent starts from a built tree; ignored artifacts stay untracked
         from .util import run_shell
-        sp = run_shell(setup, cwd=ws, timeout=float(cfg.environment.get("setup_timeout_sec", 7200)),
-                       env=cfg.test.env)
+        # setup runs before the agent, so it may use files the agent never sees (e.g. scripts in .agent-evals/)
+        env = {**cfg.test.env, "REPOEVALS_SOURCE": str(source.resolve()), "REPOEVALS_ROOT": str(cfg.root),
+               "REPOEVALS_TASK_DIR": str(task.dir)}
+        sp = run_shell(setup, cwd=ws, timeout=float(cfg.environment.get("setup_timeout_sec", 7200)), env=env)
         (run_dir / "setup.log").write_text(sp.out[-200000:])
         if not sp.ok:
             raise RuntimeError(f"{task.id}: [environment].setup failed (rc={sp.rc}); see {run_dir / 'setup.log'}")

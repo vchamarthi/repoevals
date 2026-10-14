@@ -169,35 +169,70 @@ def _instruction_template(kind: str, notes: str) -> str:
             f"{notes}\n-->\n\nTODO: problem statement.\n")
 
 
+def _node_src(lines: list[str], n) -> str:
+    start = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])])
+    return "".join(lines[start - 1:n.end_lineno])
+
+
+def _defs(src: str) -> dict:
+    """{name: (source, {method: source} or None)} for top-level functions and classes."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return {}
+    lines = src.splitlines(keepends=True)
+    out = {}
+    for n in tree.body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out[n.name] = (_node_src(lines, n), None)
+        elif isinstance(n, ast.ClassDef):
+            methods = {m.name: _node_src(lines, m) for m in n.body
+                       if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            out[n.name] = (_node_src(lines, n), methods)
+    return out
+
+
 def extract_changed_tests(old: str, new: str) -> tuple[str, list[str]]:
-    """A standalone test module with only the test functions/classes that `new` adds or changes relative to `old`,
-    plus all of `new`'s module-level setup (imports, constants, helpers). Returns ("", []) if nothing changed."""
-    def segments(src: str) -> dict[str, str]:
-        out = {}
-        try:
-            tree = ast.parse(src)
-        except SyntaxError:
-            return out
-        lines = src.splitlines(keepends=True)
-        for n in tree.body:
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                start = min([n.lineno] + [d.lineno for d in n.decorator_list])
-                out[n.name] = "".join(lines[start - 1:n.end_lineno])
-        return out
+    """A standalone test module with only the tests that `new` adds or changes relative to `old`, plus all of
+    `new`'s module-level setup (imports, constants, helpers). In a test class that already existed, only the new or
+    changed test methods are kept (with the class's fixtures and helpers); a new class is kept whole.
+    Returns ("", []) if no test changed."""
     tree = ast.parse(new)
     lines = new.splitlines(keepends=True)
-    before, after = segments(old), segments(new)
-    is_test = {name for name in after if name.startswith(("test", "Test"))}
-    changed = [name for name in after if name in is_test and before.get(name) != after[name]]
-    if not changed:
-        return "", []
+    before, after = _defs(old), _defs(new)
     keep: list[str] = []
+    changed: list[str] = []
     for n in tree.body:
         name = getattr(n, "name", None)
-        if name in is_test and name not in changed:
+        if name is None or not name.startswith(("test", "Test")) or name not in after:
+            keep.append(_node_src(lines, n))
             continue
-        start = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])])
-        keep.append("".join(lines[start - 1:n.end_lineno]))
+        src, methods = after[name]
+        old_src, old_methods = before.get(name, (None, None))
+        if src == old_src:
+            continue
+        if methods is None or old_methods is None:  # function, or a class new in this change
+            keep.append(src)
+            changed.append(name)
+            continue
+        tests = {m for m in methods if m.startswith("test")}
+        new_tests = [m for m in tests if old_methods.get(m) != methods[m]]
+        if not new_tests:  # only helpers or fixtures changed: keep the whole class
+            keep.append(src)
+            changed.append(name)
+            continue
+        start = min([n.lineno] + [d.lineno for d in n.decorator_list])
+        parts = ["".join(lines[start - 1:n.body[0].lineno - 1 if not getattr(n.body[0], "decorator_list", None)
+                               else min(d.lineno for d in n.body[0].decorator_list) - 1])]
+        for m in n.body:
+            mname = getattr(m, "name", None)
+            if mname in tests and mname not in new_tests:
+                continue
+            parts.append(_node_src(lines, m))
+        keep.append(parts[0] + "\n\n".join(x.rstrip("\n") for x in parts[1:]) + "\n")
+        changed += [f"{name}::{m}" for m in methods if m in new_tests]
+    if not changed:
+        return "", []
     return "\n\n".join(k.rstrip("\n") for k in keep) + "\n", changed
 
 
@@ -340,8 +375,53 @@ def select_review_threads(comments: list[dict], pr_author: str) -> tuple[str, li
     return rev, threads
 
 
+def _line_map(old: str, new: str) -> dict[int, int]:
+    """1-based line numbers of `old` mapped to `new` where the lines are unchanged."""
+    sm = difflib.SequenceMatcher(None, old.splitlines(), new.splitlines(), autojunk=False)
+    out = {}
+    for tag, i1, i2, j1, _ in sm.get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                out[i1 + k + 1] = j1 + k + 1
+    return out
+
+
+def rebase_review(cfg: RepoConfig, source: Path, merge_base: str, rev: str, target: str,
+                  threads: list[dict]) -> tuple[str, list[dict], list[dict]]:
+    """Re-apply the reviewed change (merge_base..rev, library and test files only) on `target` and remap review
+    threads to line numbers of the resulting files. Returns (patch at target, kept threads, dropped threads)."""
+    from .workspace import _extract
+    files = [f for f in git(source, "diff", "--name-only", "--no-renames", merge_base, rev).out.split()
+             if _classify(cfg, f) in ("lib", "test")]
+    if not files:
+        raise ValueError("the change touches no library or test files")
+    patch = git(source, "diff", "--binary", "--no-renames", merge_base, rev, "--", *files).out
+    with tempfile.TemporaryDirectory() as td:
+        tree = Path(td) / "t"
+        tree.mkdir()
+        _extract(source, git(source, "rev-parse", f"{target}^{{commit}}", check=True).out.strip(), tree)
+        env_args = ["-c", "user.name=repoevals", "-c", "user.email=repoevals@localhost"]
+        for args in (["init", "-q"], ["add", "-A", "-f"], [*env_args, "commit", "-q", "-m", "base"]):
+            git(tree, *args, check=True)
+        pf = Path(td) / "change.patch"
+        pf.write_text(patch)
+        ap = run(["git", "apply", "--3way", str(pf)], cwd=tree)
+        if ap.rc != 0:
+            raise ValueError(f"the reviewed change does not apply at {target}: {ap.out.strip()[:400]}")
+        git(tree, "add", "-A", "-f")
+        new_patch = git(tree, "diff", "--cached", "--binary", "--no-renames", "HEAD").out
+        kept, dropped = [], []
+        for t in threads:
+            new_file = tree / t["file"]
+            old = git(source, "show", f"{rev}:{t['file']}")
+            line = _line_map(old.out, new_file.read_text(errors="replace")).get(int(t["line"])) \
+                if new_file.is_file() and old.rc == 0 else None
+            (kept if line else dropped).append({**t, "line": line or t["line"]})
+    return new_patch, kept, dropped
+
+
 def scaffold_replay(cfg: RepoConfig, source: Path, pr: int, repo_slug: str = "", task_id: str = "",
-                    force: bool = False) -> Path:
+                    force: bool = False, target_base: str = "") -> Path:
     """Create a draft review-replay task from a reviewed GitHub pull request (requires an authenticated `gh`)."""
     repo_slug = repo_slug or _repo_slug(cfg, source)
     if not repo_slug:
@@ -363,8 +443,18 @@ def scaffold_replay(cfg: RepoConfig, source: Path, pr: int, repo_slug: str = "",
             raise FileExistsError(f"{d} exists (use --force to overwrite)")
         shutil.rmtree(d)
     d.mkdir(parents=True)
-    (d / "review.patch").write_text(git(source, "diff", "--binary", "--no-renames", base, rev).out)
-    (d / "gold.json").write_text(json.dumps({"pr": pr, "revision": rev, "threads": threads}, indent=1))
+    dropped: list[dict] = []
+    if target_base:  # e.g. a release whose binaries are available
+        patch, threads, dropped = rebase_review(cfg, source, base, rev, target_base, threads)
+        if not threads:
+            shutil.rmtree(d)
+            raise ValueError(f"no review thread could be mapped onto {target_base}")
+        base = git(source, "rev-parse", f"{target_base}^{{commit}}", check=True).out.strip()
+    else:
+        patch = git(source, "diff", "--binary", "--no-renames", base, rev).out
+    (d / "review.patch").write_text(patch)
+    (d / "gold.json").write_text(json.dumps({"pr": pr, "revision": rev, "threads": threads,
+                                             "dropped": dropped}, indent=1))
     date = str(info.get("merged_at") or info.get("closed_at") or info.get("created_at") or "")[:10]
     _write_task_toml(d, [
         'version = "1.0"', "",
@@ -378,7 +468,8 @@ def scaffold_replay(cfg: RepoConfig, source: Path, pr: int, repo_slug: str = "",
     (d / "instruction.md").write_text(REVIEW_INSTRUCTION.format(project=cfg.id))
     (d / "AUTHOR_NOTES.md").write_text(
         f"# Author notes: {task_id}\n\nPR: https://github.com/{repo_slug}/pull/{pr} — {info.get('title', '')}\n"
-        f"Reviewed revision: {rev}\nBase: {base}\n\n"
+        f"Reviewed revision: {rev}\nBase: {base}" + (f" ({target_base}; {len(dropped)} thread(s) could not be "
+                                                     "mapped and were dropped)" if target_base else "") + "\n\n"
         "Edit gold.json: keep threads that ask for a change; remove praise, questions answered by the author, and\n"
         "pure nits. Each remaining thread is a finding a good reviewer should make.\n\n" +
         "\n".join(f"- `{t['file']}:{t['line']}` ({t['author']}): {t['body'][:160]!r}" for t in threads) + "\n")

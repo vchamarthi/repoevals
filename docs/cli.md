@@ -89,10 +89,11 @@ Arms:
 | `guidance:file=PATH` | only `PATH`, installed as both `AGENTS.md` and `CLAUDE.md` |
 | `<name>` | as defined in `[arms.<name>]` (see [Configuration](configuration.md#arms)) |
 
-### `report RUNS [--out DIR] [--fail-under RATE]`
+### `report RUNS [--out DIR] [--fail-under RATE] [--compare DIMENSION]`
 
 Aggregate every `grade.json` under `RUNS` into `summary.md`, `results.json` and `results.jsonl` (default
-`RUNS/report`). With `--fail-under`, exit 1 when any configuration's pass rate is below `RATE`. See
+`RUNS/report`). With `--fail-under`, exit 1 when any configuration's pass rate is below `RATE`. With `--compare arm`
+(or `label`, `agent`, `model`), only configurations differing in that one dimension are compared. See
 [Reports and statistics](reports.md).
 
 ### `show RUN_DIR [--diff] [--answer]`
@@ -123,7 +124,7 @@ given, and `validate` warns about them. See [Creating tasks](authoring.md).
 |---|---|
 | `mine [--since DATE] [--limit N] [--top N] [--json FILE] [--release-base TAG]` | rank commits that changed library code and tests together; with `--release-base`, only non-compiled fixes after TAG that apply at TAG |
 | `fix COMMIT [--id ID] [--family fix\|feature] [--base REV] [--extract-tests] [--force]` | scaffold a hidden-tests task from a commit, optionally at another base and with only the changed test functions |
-| `review-replay PR [--repo OWNER/NAME] [--id ID] [--force]` | scaffold a review-replay task from a GitHub pull request (needs `gh`) |
+| `review-replay PR [--repo OWNER/NAME] [--id ID] [--base REV] [--force]` | scaffold a review-replay task from a GitHub pull request (needs `gh`) |
 | `mutants TASK FILE [--function NAME] [--max N] [--base REV]` | generate mutant patches for a Python file; creates the test-writing task if needed |
 | `prune-mutants TASK` | remove mutants the task's reference tests do not detect |
 | `approve TASK...` | set `status = "ready"`; refuses tasks whose instruction is still the template |

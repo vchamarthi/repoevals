@@ -198,3 +198,39 @@ def test_resolve_rev_fetches_tags_from_upstream(repo_with_fix, tmp_path):
     with pytest.raises(RuntimeError, match="upstream"):
         resolve_rev(fork, "v9")
     assert resolve_rev(fork, "v9", upstream=str(upstream)) == _git(upstream, "rev-parse", "v9^{commit}")
+
+
+def test_extract_changed_tests_method_level():
+    old = ("import pytest\n\n\nclass TestX:\n    @pytest.fixture\n    def data(self):\n        return 1\n\n"
+           "    def test_a(self, data):\n        assert data\n\n    def test_b(self):\n        assert 1\n")
+    new = old.replace("    def test_b(self):\n        assert 1", "    def test_b(self):\n        assert 2")
+    text, names = A.extract_changed_tests(old, new)
+    assert names == ["TestX::test_b"]
+    assert "def data" in text and "def test_b" in text and "def test_a" not in text
+    compile(text, "t.py", "exec")
+
+
+def test_rebase_review_remaps_lines(minisci_repo):
+    repo = minisci_repo
+    base = _git(repo, "rev-parse", "HEAD")
+    stats = repo / "minisci" / "stats.py"
+    original = stats.read_text()
+    # the reviewed change (made on `base`): a new helper at the end of stats.py
+    stats.write_text(original + "\n\ndef double(x):\n    print('debug')\n    return 2 * x\n")
+    _git(repo, "commit", "-qam", "review me")
+    rev = _git(repo, "rev-parse", "HEAD")
+    # the release: unrelated lines added at the top of the same file, shifting everything down by 3
+    _git(repo, "checkout", "-q", "-b", "release", base)
+    stats.write_text("# one\n# two\n# three\n" + original)
+    _git(repo, "commit", "-qam", "release")
+    old_line = next(i for i, ln in enumerate(git_show(repo, rev, "minisci/stats.py"), 1) if "print('debug')" in ln)
+    cfg = load_config(repo / "repoevals.toml")
+    patch, kept, dropped = A.rebase_review(cfg, repo, base, rev, "release",
+                                           [{"file": "minisci/stats.py", "line": old_line, "body": "debug print"},
+                                            {"file": "README.md", "line": 1, "body": "not a code file"}])
+    assert kept[0]["line"] == old_line + 3 and dropped[0]["file"] == "README.md"
+    assert "+    print('debug')" in patch
+
+
+def git_show(repo, rev, path):
+    return _git(repo, "show", f"{rev}:{path}").splitlines()
