@@ -297,6 +297,62 @@ def cmd_doctor(args) -> int:
     return 0 if ok else 1
 
 
+def cmd_guidance(args) -> int:
+    cfg = _cfg(args)
+    if args.guidance_cmd == "lint":
+        return cmd_guidance_lint(args)
+    if args.guidance_cmd == "suggest":
+        from .suggest import suggest
+        runs = Path(args.runs).resolve()
+        out = Path(args.out).resolve() if args.out else runs / "guidance"
+        r = suggest(runs, cfg, out, draft_with=args.draft_with or "", model=args.model or "",
+                    min_runs=args.min_runs)
+        print(f"{r['evidence']['runs']} runs analysed; {len(r['suggestions'])} suggestion(s)")
+        for s_ in r["suggestions"]:
+            print(f"- {s_}")
+        print(f"evidence: {out / 'evidence.md'}\ndraft ({r['drafted_by']}): {r['draft_dir']} "
+              f"({', '.join(r['draft_files'])})\n"
+              f"next: repoevals guidance verify {r['draft_dir']} --agent <agent> --repeats 5")
+        return 0
+    if args.guidance_cmd == "verify":
+        from .report import load_grades, summarize, to_markdown
+        from .runner import RunOptions, default_runs_root, run_matrix
+        draft = Path(args.draft).resolve()
+        if not draft.is_dir():
+            print(f"error: {draft} is not a directory")
+            return 2
+        tasks = _tasks(cfg, args.tasks)
+        if not args.include_drafts:
+            tasks = [t for t in tasks if t.status != "draft"]
+        if args.exclude_tasks_in:  # held-out verification: only tasks the evidence did not come from
+            seen = {g.get("task") for g in load_grades(Path(args.exclude_tasks_in).resolve())}
+            tasks = [t for t in tasks if t.id not in seen]
+        if not tasks:
+            print("no tasks to run (use --include-drafts for draft tasks)")
+            return 1
+        out = Path(args.out).resolve() if args.out else \
+            default_runs_root(cfg) / f"guidance-verify-{time.strftime('%Y%m%d-%H%M%S')}"
+        arms = [args.baseline, f"guidance:overlay={draft}"]
+        opts = RunOptions(agent=args.agent, arms=arms, repeats=args.repeats, model=args.model or "",
+                          jobs=args.jobs, retries=args.retries)
+        print(f"runs: {out}")
+        run_matrix(cfg, tasks, _source(args, cfg), out, opts)
+        s = summarize(load_grades(out), compare="arm")
+        md = to_markdown(s)
+        (out / "verify.md").write_text(md)
+        print(md)
+        comp = next((c for c in s["comparisons"] if c.get("n_tasks")), None)
+        if comp:
+            draft_is_b = comp["b"].endswith(f"guidance:overlay={draft}")
+            delta = comp["delta"] if draft_is_b else -comp["delta"]
+            lo, hi = comp["ci95"] if draft_is_b else (-comp["ci95"][1], -comp["ci95"][0])
+            verdict = "helps" if lo > 0 else ("hurts" if hi < 0 else "no clear difference")
+            print(f"draft vs {args.baseline}: Δ pass rate {delta:+.3f} (95% CI {lo:+.3f} to {hi:+.3f}, "
+                  f"p={comp['p_value']}): {verdict}")
+        return 0
+    return 2
+
+
 def cmd_author(args) -> int:
     from . import authoring as A
     cfg = _cfg(args)
@@ -460,6 +516,34 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("doctor", help="check that repoevals, git, the test setup and agent CLIs are ready")
     p.add_argument("tests", nargs="*", help="test targets to try running on the current tree")
     p.set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("guidance", help="improve agent guidance files: evidence, drafts, and A/B verification")
+    gsub = p.add_subparsers(dest="guidance_cmd", required=True)
+    g = gsub.add_parser("suggest", help="mine graded runs for guidance problems; write evidence and a draft")
+    g.add_argument("runs", help="directory with graded runs (ideally both guidance:raw and guidance:none)")
+    g.add_argument("--out", help="output directory (default: <runs>/guidance)")
+    g.add_argument("--draft-with", metavar="AGENT",
+                   help="write the draft with an agent: claude-code | codex | cmd:<command reading the prompt on "
+                        "stdin> (default: deterministic notes section)")
+    g.add_argument("--model", help="model for --draft-with")
+    g.add_argument("--min-runs", type=int, default=2, help="report problems seen in at least this many runs")
+    g = gsub.add_parser("verify", help="run tasks with the current guidance and with a draft; compare")
+    g.add_argument("draft", help="draft directory (overlaid on the workspace), e.g. <runs>/guidance/draft")
+    g.add_argument("tasks", nargs="*", help=TASKS_HELP)
+    g.add_argument("--agent", required=True, help="claude-code | codex | noop | cmd:<template>")
+    g.add_argument("--model", help="model id passed to the agent CLI")
+    g.add_argument("--baseline", default="guidance:raw", help="arm to compare against (default: guidance:raw)")
+    g.add_argument("--repeats", type=int, default=5, help="attempts per task and arm (default: 5)")
+    g.add_argument("--jobs", type=int, default=1, help="attempts to run in parallel")
+    g.add_argument("--retries", type=int, default=2, help="retries after agent infrastructure errors")
+    g.add_argument("--include-drafts", action="store_true", help="also use draft tasks")
+    g.add_argument("--exclude-tasks-in", metavar="RUNS",
+                   help="skip tasks that appear in these runs (verify on tasks the evidence did not come from)")
+    g.add_argument("--out", help="output directory")
+    g = gsub.add_parser("lint", help="check that paths named in agent guidance files exist")
+    g.add_argument("--strict", action="store_true", help="exit 1 when a claim is missing")
+    for x in gsub.choices.values():
+        x.add_argument("--source", help=SOURCE_HELP)
+    p.set_defaults(fn=cmd_guidance)
     p = sub.add_parser("author", help="create tasks: mine history, scaffold drafts, generate mutants, agent playbook")
     asub = p.add_subparsers(dest="author_cmd", required=True)
     a = asub.add_parser("mine", help="rank commits that changed library code together with tests")

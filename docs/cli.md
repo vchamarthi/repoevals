@@ -87,6 +87,7 @@ Arms:
 | `guidance:raw` | your guidance files as committed |
 | `guidance:none` | no guidance files |
 | `guidance:file=PATH` | only `PATH`, installed as both `AGENTS.md` and `CLAUDE.md` |
+| `guidance:overlay=DIR` | your guidance plus the files in `DIR` (added or replaced), e.g. a draft from `guidance suggest` |
 | `<name>` | as defined in `[arms.<name>]` (see [Configuration](configuration.md#arms)) |
 
 ### `report RUNS [--out DIR] [--fail-under RATE] [--compare DIMENSION]`
@@ -132,6 +133,16 @@ given, and `validate` warns about them. See [Creating tasks](authoring.md).
 | `playbook` | print the agent playbook |
 | `prompt --repo URL [--count N] [--families TEXT] [--workdir DIR]` | print a ready-to-use prompt for an agent |
 | `install [--no-claude] [--codex] [--codex-home DIR]` | install the playbook as a Claude Code skill and/or a Codex custom prompt |
+
+### `guidance <subcommand>`
+
+Improve agent guidance files. See [Improving agent guidance](guidance.md).
+
+| subcommand | description |
+|---|---|
+| `suggest RUNS [--out DIR] [--draft-with AGENT] [--model M] [--min-runs N]` | mine graded runs for problems guidance could prevent; write `evidence.md`, `evidence.json` and a `draft/` directory |
+| `verify DRAFT [tasks ...] --agent A [--repeats N] [--baseline ARM] [--jobs N] [--exclude-tasks-in RUNS]` | run tasks with the current guidance and with the draft overlaid; print the paired difference and write `verify.md` |
+| `lint [--strict]` | same as `guidance-lint` |
 
 ### `guidance-lint [--strict]`
 

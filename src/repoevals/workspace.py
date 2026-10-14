@@ -24,7 +24,8 @@ from .task import Task
 from .util import apply_patch, git, git_commit, glob_match, resolve_rev, run
 
 ARMS_HELP = """arms: guidance:raw (as checked in, default) | guidance:none (all guidance files deleted) |
-guidance:file=<path> (only <path>, installed as AGENTS.md and CLAUDE.md) | <name> defined in [arms.<name>]"""
+guidance:file=<path> (only <path>, installed as AGENTS.md and CLAUDE.md) | guidance:overlay=<dir> (files in <dir>
+added or replaced, other guidance kept) | <name> defined in [arms.<name>]"""
 AGENT_FILES = ("AGENTS.md", "CLAUDE.md")  # Codex and most agents read AGENTS.md; Claude Code reads CLAUDE.md
 GUIDANCE_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", ".cursorrules")
 
@@ -60,6 +61,8 @@ def apply_arm(ws: Path, cfg: RepoConfig, arm: str) -> list[str]:
         return []
     if arm in ("guidance:none", "none"):
         spec: dict = {}
+    elif arm.startswith("guidance:overlay="):  # e.g. a draft from `repoevals guidance suggest`
+        spec = {"remove": [], "overlay": str(Path(arm.split("=", 1)[1]).expanduser().resolve())}
     elif arm.startswith("guidance:file="):
         src = str(Path(arm.split("=", 1)[1]).expanduser().resolve())
         spec = {"install": {name: src for name in AGENT_FILES}}

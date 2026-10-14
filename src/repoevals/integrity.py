@@ -25,7 +25,7 @@ from .util import WorkTree, glob_match
 
 # (pattern, flags): added lines in test files that disable or neuter tests
 SKIP_PATTERNS = [
-    (r"pytest\.mark\.(skip|skipif|xfail)", 0), (r"pytest\.(skip|xfail|importorskip|exit)\(", 0),
+    (r"pytest\.mark\.(skip|skipif|xfail)", 0), (r"pytest\.(skip|xfail|exit)\(", 0),
     (r"unittest\.(skip|skipIf|skipUnless|expectedFailure)", 0), (r"\.skipTest\(", 0), (r"\bSkipTest\b", 0),
     (r"@skip\b", 0), (r"\bGTEST_SKIP\(", 0), (r"\bTEST(_F|_P)?\s*\(\s*\w+\s*,\s*DISABLED_", 0),
     (r"^\s*#\s*if\s+0\b", 0), (r"assert\s+True\s*(#.*)?$", 0),

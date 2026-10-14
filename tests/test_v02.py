@@ -255,3 +255,23 @@ def test_setup_sees_source_and_task_dir(minisci_repo, tmp_path):
         fh.write('\n[environment]\nsetup = "echo $REPOEVALS_TASK_DIR > .setup-env && test -d $REPOEVALS_SOURCE/.git"\n')
     cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
     assert (ws / ".setup-env").read_text().strip() == str(t.dir)
+
+
+def test_importorskip_in_new_tests_is_not_tampering(tmp_path):
+    r = _repo_with_test_v02(tmp_path, 'np = pytest.importorskip("numpy")')
+    assert r["integrity_ok"] is True
+
+
+def _repo_with_test_v02(tmp_path, added_line):
+    from repoevals.integrity import check
+    from repoevals.util import git
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t"}
+    ws = tmp_path / "ws"
+    (ws / "tests").mkdir(parents=True)
+    (ws / "tests" / "test_a.py").write_text("def test_a():\n    assert 1\n")
+    for c in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-qm", "i"]):
+        subprocess.run(c, cwd=ws, check=True, env=env)
+    base = git(ws, "rev-parse", "HEAD").out.strip()
+    (ws / "tests" / "test_a.py").write_text("import pytest\n" + added_line + "\n\ndef test_a():\n    assert 1\n")
+    return check(ws, base, [], {"tests/test_a.py": "M"}, ["tests/**"], [], [])

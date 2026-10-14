@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `repoevals guidance suggest`: mine graded runs for problems agent guidance could prevent (failing commands,
+  environment errors, rediscovered files, rule violations, tasks worse with guidance, stale references, files an
+  agent would not read); writes evidence and a draft, deterministically or with `--draft-with claude-code|codex|cmd:`.
+- `repoevals guidance verify`: A/B-test a draft against the current guidance and report the paired difference.
+- Arm `guidance:overlay=DIR`.
+
 - `author fix --base` and `author mutants --base`: author tasks at a release (prebuilt binaries) instead of the
   fix's parent.
 - Installed package versions are recorded in `run.json` and in `check --json` output.

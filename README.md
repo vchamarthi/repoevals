@@ -26,6 +26,8 @@ gets the same score.
   comparisons between configurations, with cost and token usage.
 - **Task authoring built in** — mine candidate tasks from your history, scaffold drafts from commits and pull
   requests, generate mutants, or hand the whole procedure to Claude Code or Codex with the agent playbook.
+- **Better agent guidance** — find what agents struggle with in your repository, draft changes to `AGENTS.md`,
+  `CLAUDE.md` or Copilot instructions, and prove a draft helps before adopting it.
 - **Any agent, any stack** — Claude Code, Codex, or any command-line agent; pytest, Bazel, CTest or any test command.
 
 ## Contents
@@ -169,6 +171,19 @@ repoevals author approve fix_kmeans_empty_cluster review_replay_pr3182
 Prefer to do it yourself? `repoevals author mine` lists candidate commits and `repoevals author fix <commit>`
 scaffolds a task from one. See [Creating tasks](docs/authoring.md).
 
+## Improving your agent guidance
+
+```bash
+repoevals run --agent claude-code --arm guidance:raw --arm guidance:none --repeats 5 --out runs/baseline
+repoevals guidance suggest runs/baseline --draft-with claude-code    # evidence + a drafted AGENTS.md/CLAUDE.md
+repoevals guidance verify runs/baseline/guidance/draft --agent claude-code --repeats 5
+```
+
+`suggest` finds what agents repeatedly got wrong — failing commands, environment errors, files they had to
+rediscover, rules they broke, tasks the guidance makes worse — and drafts changes; `verify` runs the same tasks with
+the current guidance and with the draft and reports whether the draft helps. See
+[Improving agent guidance](docs/guidance.md).
+
 ## Concepts
 
 | term | meaning |
@@ -279,6 +294,7 @@ scheduled workflow. See [GitHub Action](docs/github-action.md).
 |---|---|
 | [Getting started](docs/getting-started.md) | adopt repoevals in an existing repository and write good first tasks |
 | [Creating tasks](docs/authoring.md) | mine history, scaffold drafts, generate mutants, review and approve |
+| [Improving agent guidance](docs/guidance.md) | evidence-based changes to AGENTS.md, CLAUDE.md and Copilot instructions, verified by A/B runs |
 | [Agent playbook](docs/agent-playbook.md) | the procedure an AI agent follows to author tasks for a repository |
 | [Configuration](docs/configuration.md) | every `repoevals.toml` option and test adapter |
 | [Tasks](docs/tasks.md) | task directory layout, `task.toml` fields and grader options |
