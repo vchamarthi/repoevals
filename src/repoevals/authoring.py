@@ -141,10 +141,16 @@ def _instruction_template(kind: str, notes: str) -> str:
 
 
 def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", family: str = "fix",
-                 force: bool = False) -> Path:
-    """Create a draft hidden-tests task from a commit that fixed a bug (or added a feature) together with tests."""
+                 force: bool = False, base: str = "") -> Path:
+    """Create a draft hidden-tests task from a commit that fixed a bug (or added a feature) together with tests.
+
+    By default the task starts from the commit's parent. With `base`, it starts from another revision that still
+    has the bug — typically the last release before the fix, so prebuilt release binaries match the task's
+    sources — and the fix must apply there.
+    """
     sha = git(source, "rev-parse", f"{commit}^{{commit}}", check=True).out.strip()
-    parent = git(source, "rev-parse", f"{sha}^1", check=True).out.strip()
+    fix_parent = git(source, "rev-parse", f"{sha}^1", check=True).out.strip()
+    parent = git(source, "rev-parse", f"{base}^{{commit}}", check=True).out.strip() if base else fix_parent
     raw_subject = git(source, "log", "-1", "--format=%s", sha).out.strip()
     subject, body = _title(source, sha)
     date = git(source, "log", "-1", "--format=%cs", sha).out.strip()
@@ -158,12 +164,15 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
         shutil.rmtree(d)
     (d / "hidden").mkdir(parents=True)
     status = {}
-    for row in git(source, "diff", "--name-status", "--no-renames", parent, sha).out.splitlines():
+    for row in git(source, "diff", "--name-status", "--no-renames", fix_parent, sha).out.splitlines():
         parts = row.split("\t")
         if len(parts) >= 2:
             status[parts[-1]] = parts[0][0]
     tests = sorted(p for p, s in status.items() if s != "D" and _classify(cfg, p) == "test")
     non_tests = sorted(p for p in status if _classify(cfg, p) != "test")
+    # the reference fix is the library change only: changelogs, docs and CI files often conflict at other bases
+    # and are not part of what the agent is asked to do
+    lib_changes = [p for p in non_tests if _classify(cfg, p) == "lib"] or non_tests
     if not tests:
         raise ValueError(f"{sha[:12]} changes no test files (by [policy].test_globs); nothing to hide")
     if not non_tests:
@@ -173,7 +182,17 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
         target.parent.mkdir(parents=True, exist_ok=True)
         blob = run(["git", "-C", str(source), "show", f"{sha}:{p}"])
         target.write_text(blob.out)
-    patch = git(source, "diff", "--binary", "--no-renames", parent, sha, "--", *non_tests).out
+    patch = git(source, "diff", "--binary", "--no-renames", fix_parent, sha, "--", *lib_changes).out
+    if base:
+        from .workspace import _extract
+        with tempfile.TemporaryDirectory() as td:
+            _extract(source, parent, Path(td))
+            pf = Path(td) / ".fix.patch"
+            pf.write_text(patch)
+            chk = run(["git", "apply", "--check", str(pf)], cwd=td)
+        if chk.rc != 0:
+            shutil.rmtree(d)
+            raise ValueError(f"the fix does not apply at {base}: {chk.out.strip()[:400]}")
     (d / "oracle.patch").write_text(patch)
     m = PR_NUM.search(raw_subject)
     slug_ = _repo_slug(cfg, source)
@@ -206,7 +225,9 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
                                                             notes.replace("-->", "- ->")))
     (d / "AUTHOR_NOTES.md").write_text(
         f"# Author notes: {task_id}\n\nNot shown to the agent under evaluation.\n\n"
-        f"- source: {src_url}\n- commit: {sha}\n- base (parent): {parent}\n- subject: {subject}\n\n"
+        f"- source: {src_url}\n- commit: {sha}\n- base: {parent}" + (f" ({base}, not the fix's parent)" if base
+                                                                       else " (the fix's parent)") +
+        f"\n- subject: {subject}\n\n"
         f"## Files changed by the fix\n\n" + "\n".join(f"- `{p}` ({status[p]})" for p in non_tests) +
         "\n\n## Hidden tests (from the fix commit)\n\n" + "\n".join(f"- `{p}`" for p in tests) +
         (f"\n\n## Commit message\n\n{body}\n" if body else "\n"))
@@ -406,9 +427,11 @@ def _git_patch(path: str, old: str, new: str) -> str:
     return f"diff --git a/{path} b/{path}\n{body}"
 
 
-def mutants(source_root: Path, path: str, function: str = "", max_n: int = 20) -> list[tuple[str, str]]:
-    """[(name, patch)] candidate mutants for a Python file, spread across operator kinds."""
-    src = (source_root / path).read_text()
+def mutants(source_root: Path, path: str, function: str = "", max_n: int = 20,
+            base: str = "") -> list[tuple[str, str]]:
+    """[(name, patch)] candidate mutants for a Python file, spread across operator kinds. With `base`, the file is
+    read at that revision (the task's base), not from the working tree."""
+    src = git(source_root, "show", f"{base}:{path}", check=True).out if base else (source_root / path).read_text()
     edits = _candidate_edits(src, function)
     by_op: dict[str, list[_Edit]] = {}
     for e in edits:
@@ -435,14 +458,15 @@ def mutants(source_root: Path, path: str, function: str = "", max_n: int = 20) -
     return out
 
 
-def scaffold_mutation(cfg: RepoConfig, source: Path, task_id: str, path: str, function: str = "") -> Path:
+def scaffold_mutation(cfg: RepoConfig, source: Path, task_id: str, path: str, function: str = "",
+                      base: str = "") -> Path:
     """Create a draft test-writing task (task.toml, instruction template, oracle_tests/) if it does not exist."""
     import time
     d = cfg.tasks_dir / task_id
     if (d / "task.toml").exists():
         return d
     (d / "oracle_tests").mkdir(parents=True, exist_ok=True)
-    head = git(source, "rev-parse", "HEAD", check=True).out.strip()
+    head = git(source, "rev-parse", f"{base or 'HEAD'}^{{commit}}", check=True).out.strip()
     what = f"`{function}` in `{path}`" if function else f"`{path}`"
     _write_task_toml(d, [
         'version = "1.0"', "",

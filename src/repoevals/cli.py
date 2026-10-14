@@ -311,7 +311,8 @@ def cmd_author(args) -> int:
         print(f"{len(cands)} candidates (commits changing library code and tests)")
         return 0
     if sub == "fix":
-        d = A.scaffold_fix(cfg, src, args.commit, task_id=args.id or "", family=args.family, force=args.force)
+        d = A.scaffold_fix(cfg, src, args.commit, task_id=args.id or "", family=args.family, force=args.force,
+                           base=args.base or "")
         print(f"created draft {d}\nnext: write instruction.md, narrow [grader].targets, add regression_targets, then "
               f"`repoevals check {d.name} --repeats 3`")
         return 0
@@ -320,8 +321,8 @@ def cmd_author(args) -> int:
         print(f"created draft {d}\nnext: prune gold.json to substantive threads, then `repoevals check {d.name}`")
         return 0
     if sub == "mutants":
-        task_dir = A.scaffold_mutation(cfg, src, args.task, args.file, args.function or "")
-        items = A.mutants(cfg.root, args.file, function=args.function or "", max_n=args.max)
+        task_dir = A.scaffold_mutation(cfg, src, args.task, args.file, args.function or "", base=args.base or "")
+        items = A.mutants(src, args.file, function=args.function or "", max_n=args.max, base=args.base or "")
         for p in A.write_mutants(task_dir, items):
             print(p)
         print(f"{len(items)} mutants written; add reference tests in oracle_tests/, then "
@@ -464,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("commit", help="the commit that fixed the bug (or added the feature) with tests")
     a.add_argument("--id", help="task id (default: derived from the commit subject)")
     a.add_argument("--family", default="fix", choices=["fix", "feature"])
+    a.add_argument("--base", help="start from this revision instead of the commit's parent (e.g. the last release)")
     a.add_argument("--force", action="store_true", help="overwrite an existing task directory")
     a = asub.add_parser("review-replay", help="scaffold a draft review-replay task from a GitHub pull request")
     a.add_argument("pr", type=int, help="pull request number")
@@ -475,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("file", help="repository-relative path of the Python file to mutate")
     a.add_argument("--function", help="only mutate this function")
     a.add_argument("--max", type=int, default=20, help="maximum mutants (default: 20)")
+    a.add_argument("--base", help="mutate the file as of this revision (the task's base; default: working tree)")
     a = asub.add_parser("prune-mutants", help="drop mutants the task's reference tests do not detect")
     a.add_argument("task", help="task id")
     a = asub.add_parser("pin", help="replace symbolic task bases (HEAD, branches) with commit SHAs")
