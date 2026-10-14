@@ -30,8 +30,13 @@ from .util import fmt, run
 
 DEFAULT_PASSTHROUGH = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY",
                        "OPENAI_BASE_URL", "GEMINI_API_KEY"]
+# the agent's final message itself says it could not work (usage caps end the session with exit code 0)
+LIMIT_ANSWER = re.compile(r"(hit your (session|usage|weekly|daily) limit|usage limit (reached|exceeded)|"
+                          r"rate limit (reached|exceeded)|credit balance is too low|quota exceeded|"
+                          r"please run /login|not logged in|invalid api key)", re.I)
 INFRA_PATTERNS = re.compile(
-    r"(rate[ _-]?limit|429|overloaded|529|authenticat|unauthori[sz]ed|401\b|invalid api key|api key|credit balance|"
+    r"(rate[ _-]?limit|session limit|usage limit|"
+    r"429|overloaded|529|authenticat|unauthori[sz]ed|401\b|invalid api key|api key|credit balance|"
     r"quota|insufficient_quota|service unavailable|503\b|502\b|connection (refused|reset|error)|ENOTFOUND|"
     r"ECONNRESET|not logged in|please run .*login|command not found|No such file or directory: '(claude|codex)')",
     re.I)
@@ -65,6 +70,9 @@ def classify(rc: int, timed_out: bool, out: str, answer: str, events: list[dict]
         return "timeout", "time limit reached"
     if rc == 127:
         return "infra_error", "agent CLI not found"
+    m = LIMIT_ANSWER.search(answer[-2000:])
+    if m and len(answer.strip()) < 600:  # a short final message that is only the limit/auth notice
+        return "infra_error", f"agent stopped: {m.group(0)}"
     if not traced:  # cmd: agents may legitimately work silently; only clear CLI failures count
         m = INFRA_PATTERNS.search(out[-4000:]) if rc != 0 else None
         return ("infra_error", f"agent CLI reported: {m.group(0)}") if m else ("ok", "")

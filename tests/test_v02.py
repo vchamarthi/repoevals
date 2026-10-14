@@ -275,3 +275,11 @@ def _repo_with_test_v02(tmp_path, added_line):
     base = git(ws, "rev-parse", "HEAD").out.strip()
     (ws / "tests" / "test_a.py").write_text("import pytest\n" + added_line + "\n\ndef test_a():\n    assert 1\n")
     return check(ws, base, [], {"tests/test_a.py": "M"}, ["tests/**"], [], [])
+
+
+def test_usage_limit_mid_run_is_infra_error():
+    acted = [{"kind": "command", "text": "ls", "rc": 0}]
+    msg = "You've hit your session limit · resets 11:10am (America/Chicago)"
+    assert classify(0, False, msg, msg, acted)[0] == "infra_error"
+    long_review = "The change has a session limit option that is ignored. " + "x" * 700
+    assert classify(0, False, long_review, long_review, acted)[0] == "ok"
