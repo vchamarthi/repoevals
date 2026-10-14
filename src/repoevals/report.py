@@ -132,6 +132,10 @@ def summarize(grades: list[dict]) -> dict:
             "task_health": health}
 
 
+def _dash(v) -> str:
+    return "–" if v is None else str(v)
+
+
 def _fmt_cost(v) -> str:
     return "n/a" if v is None else f"{v:.2f}"
 
@@ -146,7 +150,7 @@ def to_markdown(s: dict) -> str:
         rate = a.get("mean_pass_rate", "–")
         trace = " ¹" if a.get("trace") == "partial" else ""
         lines.append(f"| `{arm}`{trace} | {a.get('n_tasks', 0)} | {a.get('n_runs', 0)} | {rate} | {ci_s} | "
-                     f"{a.get('agent_seconds_median') or '–'} | {_fmt_cost(a.get('cost_usd'))} | "
+                     f"{_dash(a.get('agent_seconds_median'))} | {_fmt_cost(a.get('cost_usd'))} | "
                      f"{a.get('tokens', 0)} | {a.get('status')} |")
     if any(a.get("trace") == "partial" for a in s["arms"].values()):
         lines += ["", "¹ some runs have no agent trace (e.g. `cmd:` agents): trace-based integrity checks did not run."]
