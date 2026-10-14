@@ -121,10 +121,10 @@ given, and `validate` warns about them. See [Creating tasks](authoring.md).
 
 | subcommand | description |
 |---|---|
-| `mine [--since DATE] [--limit N] [--top N] [--json FILE]` | rank commits that changed library code and tests together |
-| `fix COMMIT [--id ID] [--family fix\|feature] [--force]` | scaffold a hidden-tests task from a commit |
+| `mine [--since DATE] [--limit N] [--top N] [--json FILE] [--release-base TAG]` | rank commits that changed library code and tests together; with `--release-base`, only non-compiled fixes after TAG that apply at TAG |
+| `fix COMMIT [--id ID] [--family fix\|feature] [--base REV] [--extract-tests] [--force]` | scaffold a hidden-tests task from a commit, optionally at another base and with only the changed test functions |
 | `review-replay PR [--repo OWNER/NAME] [--id ID] [--force]` | scaffold a review-replay task from a GitHub pull request (needs `gh`) |
-| `mutants TASK FILE [--function NAME] [--max N]` | generate mutant patches for a Python file; creates the test-writing task if needed |
+| `mutants TASK FILE [--function NAME] [--max N] [--base REV]` | generate mutant patches for a Python file; creates the test-writing task if needed |
 | `prune-mutants TASK` | remove mutants the task's reference tests do not detect |
 | `approve TASK...` | set `status = "ready"`; refuses tasks whose instruction is still the template |
 | `pin [TASK...]` | replace symbolic bases (`HEAD`, branch names) with full commit SHAs |

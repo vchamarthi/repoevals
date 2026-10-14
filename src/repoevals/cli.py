@@ -304,6 +304,8 @@ def cmd_author(args) -> int:
     sub = args.author_cmd
     if sub == "mine":
         cands = A.mine(cfg, src, rev=args.rev, limit=args.limit, since=args.since or "")
+        if args.release_base:
+            cands = A.release_compatible(cfg, src, cands, args.release_base)
         if args.json:
             Path(args.json).write_text(json.dumps(cands, indent=1))
         for c in cands[: args.top]:
@@ -314,7 +316,7 @@ def cmd_author(args) -> int:
         return 0
     if sub == "fix":
         d = A.scaffold_fix(cfg, src, args.commit, task_id=args.id or "", family=args.family, force=args.force,
-                           base=args.base or "")
+                           base=args.base or "", extract_tests=args.extract_tests)
         print(f"created draft {d}\nnext: write instruction.md, narrow [grader].targets, add regression_targets, then "
               f"`repoevals check {d.name} --repeats 3`")
         return 0
@@ -463,11 +465,15 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--since", help="only commits after this date, e.g. 2025-01-01")
     a.add_argument("--top", type=int, default=30, help="candidates to print (default: 30)")
     a.add_argument("--json", help="write all candidates to this file")
+    a.add_argument("--release-base", metavar="TAG",
+                   help="only fixes made after TAG, in non-compiled code, that apply at TAG (use with fix --base TAG)")
     a = asub.add_parser("fix", help="scaffold a draft hidden-tests task from a commit")
     a.add_argument("commit", help="the commit that fixed the bug (or added the feature) with tests")
     a.add_argument("--id", help="task id (default: derived from the commit subject)")
     a.add_argument("--family", default="fix", choices=["fix", "feature"])
     a.add_argument("--base", help="start from this revision instead of the commit's parent (e.g. the last release)")
+    a.add_argument("--extract-tests", action="store_true",
+                   help="hide only the test functions the fix added or changed, in a new module (robust across bases)")
     a.add_argument("--force", action="store_true", help="overwrite an existing task directory")
     a = asub.add_parser("review-replay", help="scaffold a draft review-replay task from a GitHub pull request")
     a.add_argument("pr", type=int, help="pull request number")

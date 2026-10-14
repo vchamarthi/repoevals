@@ -92,6 +92,18 @@ The draft contains:
 | `instruction.md` | a template to replace with the problem statement |
 | `AUTHOR_NOTES.md` | commit message, changed files and links, for the author only |
 
+For projects evaluated against prebuilt release binaries (no compiler available), author tasks at the release
+instead of the fix's parent:
+
+```bash
+repoevals author mine --release-base 0.20.0          # Python-only fixes after 0.20.0 that apply at 0.20.0
+repoevals author fix <commit> --base 0.20.0 --extract-tests
+```
+
+`--extract-tests` hides only the test functions the fix added or changed, in a new test module, so newer test
+helpers elsewhere in the original module do not break the task at the older base. Set `[repo].upstream` when
+working in a fork, so release tags used as bases are fetched automatically.
+
 Then write the instruction, narrow `targets` to the tests that detect the bug, add `regression_targets`, and run
 `repoevals check fix_kmeans_empty_cluster --repeats 3`.
 

@@ -55,6 +55,7 @@ gate = false
 | `tasks` | `".agent-evals/tasks"` | directory containing one sub-directory per task |
 | `graders` | `""` | directory of repository-specific grader plugins (see [Extending](extending.md)) |
 | `hide` | `[]` | additional globs removed from the agent's workspace |
+| `upstream` | `""` | repository URL to fetch missing task bases from (forks do not copy upstream tags) |
 
 The tasks directory, the graders directory, `.agent-evals/` and `repoevals.toml` are always removed from the
 agent's workspace.

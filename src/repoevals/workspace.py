@@ -21,7 +21,7 @@ from pathlib import Path
 from .config import RepoConfig
 from .integrity import leak_scan
 from .task import Task
-from .util import apply_patch, git, git_commit, glob_match, run
+from .util import apply_patch, git, git_commit, glob_match, resolve_rev, run
 
 ARMS_HELP = """arms: guidance:raw (as checked in, default) | guidance:none (all guidance files deleted) |
 guidance:file=<path> (only <path>, installed as AGENTS.md and CLAUDE.md) | <name> defined in [arms.<name>]"""
@@ -136,7 +136,7 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     if ws.exists():
         shutil.rmtree(ws)
     ws.mkdir()
-    base_sha = git(source, "rev-parse", f"{task.base}^{{commit}}", check=True).out.strip()
+    base_sha = resolve_rev(source, task.base, cfg.upstream)
     _extract(source, base_sha, ws)
     removed = []
     for p in sorted(ws.rglob("*"), reverse=True):

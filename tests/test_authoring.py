@@ -158,3 +158,43 @@ def test_mutants_from_base_revision(minisci_repo):
     (minisci_repo / "minisci" / "distance.py").write_text("def chebyshev(a, b):\n    return 0\n")
     items = A.mutants(minisci_repo, "minisci/distance.py", function="chebyshev", base=base)
     assert items and all("np.abs" in p or "max" in p or "shape" in p or "size" in p for _, p in items)
+
+
+def test_extract_changed_tests_keeps_setup_and_only_changed_tests():
+    old = ("import x\n\n\ndef helper():\n    return 1\n\n\ndef test_a():\n    assert 1\n\n\n"
+           "def test_b():\n    assert 1\n")
+    new = old.replace("def test_b():\n    assert 1", "def test_b():\n    assert 2") + \
+        "\n\n@pytest.mark.parametrize('v', [1])\ndef test_new(v):\n    assert v\n"
+    text, names = A.extract_changed_tests(old, new)
+    assert names == ["test_b", "test_new"]
+    assert "import x" in text and "def helper" in text and "@pytest.mark.parametrize" in text
+    assert "def test_a" not in text
+    assert A.extract_changed_tests(old, old) == ("", [])
+
+
+def test_scaffold_fix_extract_tests(repo_with_fix):
+    repo, sha = repo_with_fix
+    cfg = load_config(repo / "repoevals.toml")
+    d = A.scaffold_fix(cfg, repo, sha, task_id="fix_extracted", extract_tests=True)
+    t = load_task(d)
+    assert t.grader["targets"] == ["tests/test_repoevals_fix_extracted_var_ddof.py"]
+    assert "def test_var_ddof_one" in (d / "hidden" / t.grader["targets"][0]).read_text()
+
+
+def test_release_compatible_candidates(repo_with_fix):
+    repo, sha = repo_with_fix
+    _git(repo, "tag", "rel-1", f"{sha}^")
+    cfg = load_config(repo / "repoevals.toml")
+    found = A.release_compatible(cfg, repo, A.mine(cfg, repo), "rel-1")
+    assert [c["sha"] for c in found] == [sha] and found[0]["base"] == "rel-1"
+
+
+def test_resolve_rev_fetches_tags_from_upstream(repo_with_fix, tmp_path):
+    from repoevals.util import resolve_rev
+    upstream, _ = repo_with_fix
+    _git(upstream, "tag", "v9", "HEAD~1")
+    fork = tmp_path / "fork"
+    subprocess.run(["git", "clone", "-q", "--no-tags", str(upstream), str(fork)], check=True, env=GIT_ENV)
+    with pytest.raises(RuntimeError, match="upstream"):
+        resolve_rev(fork, "v9")
+    assert resolve_rev(fork, "v9", upstream=str(upstream)) == _git(upstream, "rev-parse", "v9^{commit}")

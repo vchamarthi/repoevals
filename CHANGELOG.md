@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `author fix --base` and `author mutants --base`: author tasks at a release (prebuilt binaries) instead of the
   fix's parent.
 - Installed package versions are recorded in `run.json` and in `check --json` output.
+- `author mine --release-base TAG`: fixes made after a release, in non-compiled code, that apply at the release.
+- `author fix --extract-tests`: hide only the test functions the fix added or changed, in a standalone module.
+- `[repo].upstream`: task bases missing locally (e.g. release tags in a fork) are fetched from upstream.
 
 ### Changed
 

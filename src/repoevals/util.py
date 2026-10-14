@@ -338,3 +338,19 @@ def package_versions() -> dict[str, str]:
         if name:
             out[name] = d.version
     return dict(sorted(out.items()))
+
+
+def resolve_rev(source: Path, rev: str, upstream: str = "") -> str:
+    """Full SHA of `rev` in `source`; if missing and `upstream` is set, fetch upstream tags (and the revision)
+    first. Forks do not copy tags, so release-based task bases are often missing."""
+    p = git(source, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
+    if p.rc != 0 and upstream:
+        git(source, "fetch", "-q", "--no-tags", upstream, "refs/tags/*:refs/tags/*")
+        p = git(source, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
+        if p.rc != 0 and re.fullmatch(r"[0-9a-f]{7,40}", rev):
+            git(source, "fetch", "-q", "--no-tags", upstream, rev)
+            p = git(source, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
+    if p.rc != 0:
+        raise RuntimeError(f"revision {rev!r} not found in {source}" + ("" if upstream else
+                           " (a fork without upstream tags? set [repo].upstream)"))
+    return p.out.strip()

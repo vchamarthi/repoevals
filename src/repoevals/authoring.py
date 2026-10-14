@@ -123,6 +123,35 @@ def mine(cfg: RepoConfig, source: Path, rev: str = "HEAD", limit: int = 500, sin
     return cands
 
 
+COMPILED = re.compile(r"\.(c|cc|cpp|cxx|h|hh|hpp|cu|cuh|pyx|pxd|pxi|f|f90|cmake)$|(^|/)CMakeLists\.txt$|"
+                      r"(^|/)meson\.build$|(^|/)setup\.py$")
+
+
+def release_compatible(cfg: RepoConfig, source: Path, cands: list[dict], release: str) -> list[dict]:
+    """Candidates after `release` whose library change is not compiled code and applies cleanly at `release`.
+
+    For projects evaluated against prebuilt release binaries (no compiler available): such a fix can become a task
+    whose base is the release itself (`author fix --base <release>`).
+    """
+    from .workspace import _extract
+    rel = git(source, "rev-parse", f"{release}^{{commit}}", check=True).out.strip()
+    after = set(git(source, "rev-list", f"{rel}..HEAD").out.split())
+    out = []
+    with tempfile.TemporaryDirectory() as td:
+        tree = Path(td) / "t"
+        tree.mkdir()
+        _extract(source, rel, tree)
+        for c in cands:
+            if c["sha"] not in after or any(COMPILED.search(f) for f in c["lib_files"]):
+                continue
+            patch = git(source, "diff", "--binary", f"{c['sha']}^1", c["sha"], "--", *c["lib_files"]).out
+            pf = Path(td) / "fix.patch"
+            pf.write_text(patch)
+            if run(["git", "apply", "--check", str(pf)], cwd=tree).rc == 0:
+                out.append({**c, "base": release})
+    return out
+
+
 # ------------------------------------------------------------------------------------------------- scaffolding
 
 def _toml_str(v: str) -> str:
@@ -140,8 +169,40 @@ def _instruction_template(kind: str, notes: str) -> str:
             f"{notes}\n-->\n\nTODO: problem statement.\n")
 
 
+def extract_changed_tests(old: str, new: str) -> tuple[str, list[str]]:
+    """A standalone test module with only the test functions/classes that `new` adds or changes relative to `old`,
+    plus all of `new`'s module-level setup (imports, constants, helpers). Returns ("", []) if nothing changed."""
+    def segments(src: str) -> dict[str, str]:
+        out = {}
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            return out
+        lines = src.splitlines(keepends=True)
+        for n in tree.body:
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                start = min([n.lineno] + [d.lineno for d in n.decorator_list])
+                out[n.name] = "".join(lines[start - 1:n.end_lineno])
+        return out
+    tree = ast.parse(new)
+    lines = new.splitlines(keepends=True)
+    before, after = segments(old), segments(new)
+    is_test = {name for name in after if name.startswith(("test", "Test"))}
+    changed = [name for name in after if name in is_test and before.get(name) != after[name]]
+    if not changed:
+        return "", []
+    keep: list[str] = []
+    for n in tree.body:
+        name = getattr(n, "name", None)
+        if name in is_test and name not in changed:
+            continue
+        start = min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])])
+        keep.append("".join(lines[start - 1:n.end_lineno]))
+    return "\n\n".join(k.rstrip("\n") for k in keep) + "\n", changed
+
+
 def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", family: str = "fix",
-                 force: bool = False, base: str = "") -> Path:
+                 force: bool = False, base: str = "", extract_tests: bool = False) -> Path:
     """Create a draft hidden-tests task from a commit that fixed a bug (or added a feature) together with tests.
 
     By default the task starts from the commit's parent. With `base`, it starts from another revision that still
@@ -177,11 +238,28 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
         raise ValueError(f"{sha[:12]} changes no test files (by [policy].test_globs); nothing to hide")
     if not non_tests:
         raise ValueError(f"{sha[:12]} changes only tests; there is no fix to reproduce")
+    hidden_targets, extracted = [], {}
     for p in tests:
-        target = d / "hidden" / p
-        target.parent.mkdir(parents=True, exist_ok=True)
-        blob = run(["git", "-C", str(source), "show", f"{sha}:{p}"])
-        target.write_text(blob.out)
+        blob = run(["git", "-C", str(source), "show", f"{sha}:{p}"]).out
+        if extract_tests and p.endswith(".py"):
+            prev = run(["git", "-C", str(source), "show", f"{fix_parent}:{p}"])
+            text, names = extract_changed_tests(prev.out if prev.rc == 0 else "", blob)
+            if not names:
+                continue
+            rel = str(Path(p).parent / f"test_repoevals_{task_id}_{Path(p).stem.removeprefix('test_')}.py")
+            target = d / "hidden" / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+            hidden_targets.append(rel)
+            extracted[rel] = names
+        else:
+            target = d / "hidden" / p
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(blob)
+            hidden_targets.append(p)
+    if not hidden_targets:
+        shutil.rmtree(d)
+        raise ValueError(f"{sha[:12]}: no added or changed test functions found")
     patch = git(source, "diff", "--binary", "--no-renames", fix_parent, sha, "--", *lib_changes).out
     if base:
         from .workspace import _extract
@@ -198,7 +276,8 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
     slug_ = _repo_slug(cfg, source)
     src_url = (f"https://github.com/{slug_}/pull/{m.group(1) or m.group(2)}" if m and slug_ else
                f"https://github.com/{slug_}/commit/{sha}" if slug_ else sha)
-    targets = tests if cfg.test.adapter in ("pytest", "command") else [f"TODO: test target for {t}" for t in tests]
+    targets = hidden_targets if cfg.test.adapter in ("pytest", "command") else \
+        [f"TODO: test target for {t}" for t in hidden_targets]
     _write_task_toml(d, [
         'version = "1.0"', "",
         "[metadata]",
@@ -229,7 +308,8 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
                                                                        else " (the fix's parent)") +
         f"\n- subject: {subject}\n\n"
         f"## Files changed by the fix\n\n" + "\n".join(f"- `{p}` ({status[p]})" for p in non_tests) +
-        "\n\n## Hidden tests (from the fix commit)\n\n" + "\n".join(f"- `{p}`" for p in tests) +
+        "\n\n## Hidden tests (from the fix commit)\n\n" + "\n".join(
+            f"- `{p}`" + (f": {', '.join(extracted[p])}" if p in extracted else "") for p in hidden_targets) +
         (f"\n\n## Commit message\n\n{body}\n" if body else "\n"))
     return d
 

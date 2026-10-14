@@ -9,6 +9,7 @@ repository's build and test tooling lives here, so graders stay generic.
     tasks = ".agent-evals/tasks"          # one sub-directory per task
     graders = ".agent-evals/graders"      # optional: repo-local grader plugins (*.py exporting GRADERS)
     hide = ["dev/agent_evals/**"]         # optional: more paths removed from the agent's workspace
+    upstream = "https://github.com/org/repo.git"   # optional: fetch task bases (e.g. release tags) from here
 
     [guidance]                            # agent instructions; the "guidance:none" arm deletes these
     globs = ["**/AGENTS.md", "**/CLAUDE.md", ".github/copilot-instructions.md", ".github/instructions/*.md"]
@@ -73,6 +74,7 @@ class RepoConfig:
     tasks: str = ".agent-evals/tasks"
     graders: str = ""
     hide: list[str] = field(default_factory=list)
+    upstream: str = ""
     guidance_globs: list[str] = field(default_factory=lambda: list(DEFAULT_GUIDANCE))
     test_globs: list[str] = field(default_factory=lambda: list(DEFAULT_TEST_GLOBS))
     library_globs: list[str] = field(default_factory=list)
@@ -128,6 +130,7 @@ def load_config(path: Path | None = None, root: Path | None = None) -> RepoConfi
         tasks=repo.get("tasks", ".agent-evals/tasks"),
         graders=repo.get("graders", ""),
         hide=list(repo.get("hide", [])),
+        upstream=repo.get("upstream", ""),
         guidance_globs=guid.get("globs", list(DEFAULT_GUIDANCE)),
         test_globs=pol.get("test_globs", list(DEFAULT_TEST_GLOBS)),
         library_globs=pol.get("library_globs", []),

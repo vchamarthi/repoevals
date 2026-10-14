@@ -91,7 +91,11 @@ def validate_task(t: Task, cfg: RepoConfig, source: Path | None = None) -> list[
         if m:
             errs.append(f"warning: instruction may leak the fix: {m.group(0)!r}")
     if source is not None:
-        base = git(source, "rev-parse", f"{t.base}^{{commit}}")
+        from .util import Proc, resolve_rev
+        try:
+            base = Proc(0, resolve_rev(source, t.base, cfg.upstream))
+        except RuntimeError:
+            base = Proc(1, "")
         if base.rc != 0:
             errs.append(f"base {t.base!r} not found in {source} (shallow clone, or a fork without the upstream "
                         "tags? fetch them: git fetch <upstream-url> 'refs/tags/*:refs/tags/*')")
