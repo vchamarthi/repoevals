@@ -1,0 +1,24 @@
+name: dpnp-smoke
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install dpnp==0.20.0 intel-opencl-rt pytest
+      - name: environment
+        run: |
+          P=$(python -c "import sys; print(sys.prefix)")
+          find "$P" -name "*.icd" -o -name "libintelocl*.so*" -o -name "libOpenCL.so*" | head -20
+          pip list 2>/dev/null | grep -iE "dpnp|dpctl|sycl|opencl|mkl|tbb|umf" || true
+      - name: import and compute
+        run: |
+          P=$(python -c "import sys; print(sys.prefix)")
+          export OCL_ICD_VENDORS="$P/etc/OpenCL/vendors" LD_LIBRARY_PATH="$P/lib:${LD_LIBRARY_PATH:-}"
+          export ONEAPI_DEVICE_SELECTOR=opencl:cpu
+          python -m dpctl -f || true
+          python -c "import dpnp, time; t=time.time(); a=dpnp.arange(10.0); print(dpnp.__version__, a.sycl_device, float(a.sum()), round(time.time()-t,1),'s')"
