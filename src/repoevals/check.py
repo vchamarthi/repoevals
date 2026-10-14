@@ -55,7 +55,8 @@ def validate_task(t: Task, cfg: RepoConfig, source: Path | None = None) -> list[
         errs.append("instruction.md is still the draft template")
     if any(str(x).startswith("TODO") for x in t.grader.get("targets", [])):
         errs.append("[grader].targets still contains TODO placeholders")
-    if not re.fullmatch(r"[0-9a-f]{40}(\^+|~\d+)?", t.base):
+    is_tag = source is not None and git(source, "show-ref", "--verify", "--quiet", f"refs/tags/{t.base}").rc == 0
+    if not re.fullmatch(r"[0-9a-f]{40}(\^+|~\d+)?", t.base) and not is_tag:
         errs.append(f"warning: base {t.base!r} is not a commit SHA; the task changes as the branch moves "
                     "(`repoevals author pin`)")
     if t.status == "draft":

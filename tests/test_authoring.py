@@ -127,3 +127,34 @@ def test_run_skips_drafts(repo_with_fix, tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(repo)
     rc = main(["run", "--agent", "noop", "--repeats", "1", "--out", str(tmp_path / "runs")])
     assert rc == 1 and "skipping 1 draft task" in capsys.readouterr().out
+
+
+def test_scaffold_fix_at_an_earlier_base_skips_changelog(repo_with_fix, tmp_path):
+    """Release-based tasks: start from an older revision that still has the bug; non-library files such as a
+    changelog are left out of the reference fix (they conflict at other bases)."""
+    repo, sha = repo_with_fix
+    (repo / "CHANGELOG.md").write_text("unrelated history\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "changelog")
+    release = _git(repo, "rev-parse", "HEAD")
+    stats = repo / "minisci" / "stats.py"
+    stats.write_text(stats.read_text().replace("(n - ddof)", "n"))
+    (repo / "CHANGELOG.md").write_text("* fixed var ddof\n")
+    (repo / "tests" / "test_var_ddof2.py").write_text(
+        "import minisci\n\ndef test_x():\n    assert minisci.var([1.0, 3.0], ddof=1) == 2.0\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "Fix var again (#13)")
+    fix = _git(repo, "rev-parse", "HEAD")
+    cfg = load_config(repo / "repoevals.toml")
+    d = A.scaffold_fix(cfg, repo, fix, task_id="fix_at_release", base=release)
+    t = load_task(d)
+    assert t.base == release
+    patch = (d / "oracle.patch").read_text()
+    assert "CHANGELOG" not in patch and "minisci/stats.py" in patch
+
+
+def test_mutants_from_base_revision(minisci_repo):
+    base = _git(minisci_repo, "rev-parse", "HEAD")
+    (minisci_repo / "minisci" / "distance.py").write_text("def chebyshev(a, b):\n    return 0\n")
+    items = A.mutants(minisci_repo, "minisci/distance.py", function="chebyshev", base=base)
+    assert items and all("np.abs" in p or "max" in p or "shape" in p or "size" in p for _, p in items)
