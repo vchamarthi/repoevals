@@ -287,9 +287,10 @@ def test_usage_limit_mid_run_is_infra_error():
 
 def test_setup_failure_message_includes_log_tail(minisci_repo, tmp_path):
     with open(minisci_repo / "repoevals.toml", "a") as fh:
-        fh.write('\n[environment]\nsetup = "echo building; echo BackendUnavailable: no backend >&2; echo done; echo done2; echo done3; echo done4; echo done5; exit 2"\n')
+        fh.write('\n[environment]\nsetup = "echo building; echo error: BackendUnavailable no backend >&2; '
+                 'for i in 1 2 3 4 5 6; do echo step $i; done; exit 2"\n')
     cfg = _cfg(minisci_repo)
     t = load_task(cfg.tasks_dir / "fix_var_ddof")
     with pytest.raises(RuntimeError, match="rc=2") as exc:
         prepare(cfg, t, tmp_path / "run", minisci_repo)
-    assert "BackendUnavailable: no backend" in str(exc.value)
+    assert "BackendUnavailable no backend" in str(exc.value)
