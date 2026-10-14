@@ -14,6 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `author mine --release-base TAG`: fixes made after a release, in non-compiled code, that apply at the release.
 - `author fix --extract-tests`: hide only the test functions the fix added or changed, in a standalone module.
 - `[repo].upstream`: task bases missing locally (e.g. release tags in a fork) are fetched from upstream.
+- Integrity check `runner_shadowing` (new `pytest.py`, `sitecustomize.py`, `*.pth`, …).
+
+### Fixed
+
+- Background `git gc` in a workspace could race with grading and turn a pass into an error; automatic maintenance
+  is disabled in workspaces and restoring the tree tolerates files vanishing.
+- Report configuration names no longer include the full command line of `cmd:` agents.
 
 ### Changed
 

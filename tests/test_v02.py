@@ -221,3 +221,22 @@ def test_large_output_is_bounded(tmp_path):
     p = run([sys.executable, "-c", f"import sys; sys.stdout.write('x' * {MAX_OUTPUT + 1000})"])
     assert p.ok and len(p.out) < MAX_OUTPUT + 200 and "omitted" in p.out
     assert os.environ.get("PATH")
+
+
+def test_workspace_disables_background_git_maintenance(minisci_repo, tmp_path):
+    from repoevals.util import git
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    assert git(ws, "config", "gc.auto").out.strip() == "0"
+
+
+def test_runner_shadowing_is_an_integrity_violation(minisci_repo, tmp_path):
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    (ws / "sitecustomize.py").write_text("import os\n")
+    g = grade_run(tmp_path / "run", cfg, t)
+    assert any(f["check"] == "runner_shadowing" for f in g["integrity"]["integrity_findings"])
+
+
+def test_report_names_cmd_agents_briefly():
+    from repoevals.report import config_key
+    assert config_key({"agent": "cmd:python /long/path/agent.py x {prompt_file}", "arm": "guidance:raw",
+                       "label": "oracle"}) == "oracle|cmd|-|guidance:raw"

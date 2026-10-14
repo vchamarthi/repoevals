@@ -151,6 +151,10 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     # make ws its own repository before applying patches: `git apply` run inside a subdirectory of another
     # repository (e.g. runs/ under the source checkout) silently skips paths outside that subdirectory
     git(ws, "init", "-q", "-b", "main", check=True)
+    # no background maintenance: a detached `git gc` repacking objects while grading snapshots or restores the
+    # tree makes those copies fail
+    for key, value in (("gc.auto", "0"), ("gc.autoDetach", "false"), ("maintenance.auto", "false")):
+        git(ws, "config", key, value)
     if task.has("setup.patch"):
         ap = apply_patch(ws, task.file("setup.patch"))
         if not ap.ok:

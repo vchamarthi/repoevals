@@ -37,7 +37,11 @@ def load_grades(root: Path) -> list[dict]:
 
 
 def config_key(g: dict) -> str:
-    key = f"{g.get('agent') or '?'}|{g.get('model') or '-'}|{g.get('arm') or '-'}"
+    """label|agent|model|arm; `cmd:` agents are shown as "cmd" (the command line is in meta.json)."""
+    agent = g.get("agent") or "?"
+    if agent.startswith("cmd:"):
+        agent = "cmd"
+    key = f"{agent}|{g.get('model') or '-'}|{g.get('arm') or '-'}"
     return f"{g['label']}|{key}" if g.get("label") else key
 
 

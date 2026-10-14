@@ -54,7 +54,15 @@ class TreeGuard:
         shutil.copytree(self.ws, self.tmp / "t", symlinks=True, ignore=_special_files)
 
     def restore(self) -> None:
-        shutil.rmtree(self.ws)
+        import time
+        for attempt in range(3):  # a process still exiting may remove files while we delete the tree
+            try:
+                shutil.rmtree(self.ws)
+                break
+            except FileNotFoundError:
+                if attempt == 2:
+                    shutil.rmtree(self.ws, ignore_errors=True)
+                time.sleep(0.5)
         shutil.copytree(self.tmp / "t", self.ws, symlinks=True)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
