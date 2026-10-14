@@ -29,6 +29,21 @@ requires = { devices = ["gpu"] }
 
 Set `REPOEVALS_DEVICES=cpu,gpu` on hosts that have a GPU.
 
+## SYCL CPU device from PyPI
+
+Projects using SYCL (dpnp, dpctl) run on CPU-only machines with Intel's OpenCL CPU runtime from PyPI
+(`pip install intel-opencl-rt`). Its bundled `intel-cpu.icd` points at a placeholder path, so name the driver
+directly:
+
+```bash
+export OCL_ICD_FILENAMES=$(python -c "import sys; print(sys.prefix)")/lib/libintelocl.so
+export ONEAPI_DEVICE_SELECTOR=opencl:cpu
+```
+
+To evaluate without a SYCL compiler, install a released wheel and author tasks at that release
+(`repoevals author mine --release-base <tag>`, `author fix --base <tag> --extract-tests`); copy the wheel's compiled
+modules into each workspace with `[environment].setup`.
+
 ## Tips for numerical libraries
 
 - Protect skip and deselect lists with `[policy].protected_globs` so they cannot be edited to hide failures.
