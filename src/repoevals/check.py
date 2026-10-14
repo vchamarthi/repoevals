@@ -93,7 +93,8 @@ def validate_task(t: Task, cfg: RepoConfig, source: Path | None = None) -> list[
     if source is not None:
         base = git(source, "rev-parse", f"{t.base}^{{commit}}")
         if base.rc != 0:
-            errs.append(f"base {t.base!r} not found in {source}")
+            errs.append(f"base {t.base!r} not found in {source} (shallow clone, or a fork without the upstream "
+                        "tags? fetch them: git fetch <upstream-url> 'refs/tags/*:refs/tags/*')")
         else:
             with tempfile.TemporaryDirectory() as td:
                 from .workspace import _extract

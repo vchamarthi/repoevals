@@ -42,7 +42,7 @@ Proves each task is valid by running its grader without an agent:
 | reference tests against mutants (`mutation`) | reach `oracle_min_kill` |
 | one finding on every changed line (review tasks) | fail |
 
-`--keep` keeps the run directories for inspection; `--json` writes the results to a file.
+`--keep` keeps the run directories for inspection; `--json` writes the per-task results and the installed package versions to a file.
 
 ### `run --agent AGENT [tasks ...] [options]`
 

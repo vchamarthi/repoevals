@@ -120,7 +120,9 @@ def cmd_check(args) -> int:
         print(f"{r['status'].upper():8s} {r['task']}: " + ("; ".join(r.get("problems", [])) or r.get("why", "")
                                                            or f"null={r.get('null')} oracle={r.get('oracle')}"))
     if args.json:
-        Path(args.json).write_text(json.dumps(res, indent=1))
+        from .util import package_versions
+        Path(args.json).write_text(json.dumps({"tasks": res, "packages": package_versions(),
+                                               "repoevals_version": __version__}, indent=1))
     _step_summary("repoevals check", res)
     return 1 if bad else 0
 

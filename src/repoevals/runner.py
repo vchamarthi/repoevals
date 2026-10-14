@@ -23,7 +23,7 @@ from pathlib import Path
 from . import __version__
 from .config import RepoConfig
 from .task import Task, host_supports
-from .util import git, within
+from .util import git, package_versions, within
 
 
 def default_runs_root(cfg: RepoConfig) -> Path:
@@ -87,6 +87,7 @@ def run_matrix(cfg: RepoConfig, tasks: list[Task], source: Path, out: Path, opts
                 "source": str(source), "source_sha": git(source, "rev-parse", "HEAD").out.strip(),
                 "host": {"platform": platform.platform(), "python": platform.python_version(),
                          "cpus": os.cpu_count()},
+                "packages": package_versions(),
                 "docker": opts.docker or None, "jobs": opts.jobs, "max_cost": opts.max_cost,
                 "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     (out / "run.json").write_text(json.dumps(manifest, indent=1))

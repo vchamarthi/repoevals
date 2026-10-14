@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `author fix --base` and `author mutants --base`: author tasks at a release (prebuilt binaries) instead of the
+  fix's parent.
+- Installed package versions are recorded in `run.json` and in `check --json` output.
+
+### Changed
+
+- `author fix` keeps only library files in `oracle.patch` (changelogs and docs conflict at other bases).
+- `validate` accepts release tags as bases and explains how to fetch missing bases in forks.
+- `check --json` writes `{"tasks": [...], "packages": {...}, "repoevals_version": ...}`.
+
 ## [0.2.0] - 2026-10-13
 
 ### Added

@@ -327,3 +327,14 @@ def within(root: Path, p: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def package_versions() -> dict[str, str]:
+    """Installed distributions and versions of the running Python (results depend on them; record them)."""
+    from importlib.metadata import distributions
+    out = {}
+    for d in distributions():
+        name = (d.metadata["Name"] or "").lower()
+        if name:
+            out[name] = d.version
+    return dict(sorted(out.items()))

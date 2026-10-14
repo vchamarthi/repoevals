@@ -144,6 +144,7 @@ def test_run_matrix_errors_skips_and_resume(minisci_repo, tmp_path, monkeypatch)
     assert m["counts"] == {"fail": 1, "skipped": 1}  # the errored attempt was redone, the skip kept
     run_json = json.loads((out / "run.json").read_text())
     assert run_json["agent"] == "noop" and run_json["source_sha"]
+    assert "repoevals" in run_json["packages"] and "pytest" in run_json["packages"]
 
 
 def test_guidance_file_arm_installs_for_every_agent(minisci_repo, tmp_path):
