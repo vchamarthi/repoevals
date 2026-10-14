@@ -13,6 +13,7 @@ mutants, or this framework's config. `leak_scan` verifies this after preparation
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import time
@@ -175,7 +176,9 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
         sp = run_shell(setup, cwd=ws, timeout=float(cfg.environment.get("setup_timeout_sec", 7200)), env=env)
         (run_dir / "setup.log").write_text(sp.out[-200000:])
         if not sp.ok:
-            tail = "\n".join(sp.out.strip().splitlines()[-12:])
+            lines = sp.out.strip().splitlines()
+            errors = [x for x in lines[-300:] if re.search(r"error|fatal|not found|cannot|no such|failed", x, re.I)]
+            tail = "\n".join(list(dict.fromkeys(errors))[-8:] + ["..."] + lines[-4:])
             raise RuntimeError(f"{task.id}: [environment].setup failed (rc={sp.rc}); see {run_dir / 'setup.log'}\n"
                                f"--- last lines of setup output ---\n{tail}")
     start = git_commit(ws, "workspace")
