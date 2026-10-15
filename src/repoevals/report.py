@@ -168,6 +168,11 @@ def summarize(grades: list[dict], compare: str = "") -> dict:
             health.append({"task": t, "issue": "passes in every configuration"})
         elif rates and all(r == 0.0 for r in rates):
             health.append({"task": t, "issue": "fails in every configuration"})
+    ceiling = [arm for arm, a in arms.items() if a.get("n_runs", 0) >= 5 and (a.get("mean_pass_rate") or 0) >= 0.9]
+    if ceiling:
+        health.append({"task": "(all tasks)", "issue": f"pass rate is 0.9 or higher for {', '.join(sorted(ceiling))}: "
+                       "the tasks do not discriminate, so differences between configurations or guidance cannot "
+                       "show; add harder tasks or use a weaker model before comparing"})
     errors = defaultdict(int)
     for g in grades:
         if g.get("status") == "error":
@@ -179,6 +184,12 @@ def summarize(grades: list[dict], compare: str = "") -> dict:
 
 def _dash(v) -> str:
     return "–" if v is None else str(v)
+
+
+def _delta(arms: dict, c: dict, key: str) -> str:
+    """b minus a for a per-arm figure (cost, median time), or a dash when either is unknown."""
+    a, b = (arms.get(c[x], {}).get(key) for x in ("a", "b"))
+    return "–" if a is None or b is None else f"{b - a:+.2f}"
 
 
 def _fmt_cost(v) -> str:
@@ -207,13 +218,14 @@ def to_markdown(s: dict) -> str:
                   for arm, fam, f in fam_rows]
     if s["comparisons"]:
         lines += ["", "## Paired comparisons (b − a, same tasks)", "",
-                  "| a | b | tasks | Δ pass rate | 95% CI | p (sign-flip) | better / worse |",
-                  "|---|---|---|---|---|---|---|"]
+                  "| a | b | tasks | Δ pass rate | 95% CI | p (sign-flip) | better / worse | Δ cost $ | Δ time (s) |",
+                  "|---|---|---|---|---|---|---|---|---|"]
         for c in s["comparisons"]:
             if c.get("n_tasks"):
                 ci = f"{c['ci95'][0]}–{c['ci95'][1]}"
                 lines.append(f"| `{c['a']}` | `{c['b']}` | {c['n_tasks']} | {c['delta']:+} | {ci} "
-                             f"| {c['p_value']} | {c['tasks_better']} / {c['tasks_worse']} |")
+                             f"| {c['p_value']} | {c['tasks_better']} / {c['tasks_worse']} "
+                             f"| {_delta(s['arms'], c, 'cost_usd')} | {_delta(s['arms'], c, 'agent_seconds_median')} |")
         if len(s["comparisons"]) > 1:
             lines += ["", f"_{len(s['comparisons'])} comparisons: p-values are not adjusted for multiple testing._"]
     for arm, a in sorted(s["arms"].items()):

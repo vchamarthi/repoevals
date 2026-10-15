@@ -114,6 +114,19 @@ def _passed(g: dict) -> bool | None:
     return g.get("pass")
 
 
+DETAIL_METRICS = ("hidden_pass", "regression_pass", "case_pass_rate", "n_cases", "recall", "precision", "kill_rate")
+
+
+def _detail(g: dict) -> dict:
+    """What a run did, for the author: key metrics and the failing-test summary (tests that crashed show rc < 0)."""
+    d = {k: g["metrics"][k] for k in DETAIL_METRICS if k in g.get("metrics", {})}
+    tests = (g.get("details") or {}).get("tests") or {}
+    for k in ("passed", "failed", "rc", "failing_total", "failing_by_test"):
+        if k in tests:
+            d[k] = tests[k]
+    return d
+
+
 def check_task(t: Task, cfg: RepoConfig, source: Path, work: Path, repeats: int = 1) -> dict:
     ok, why = host_supports(t)
     res: dict = {"task": t.id, "grader": t.grader_type}
@@ -126,6 +139,7 @@ def check_task(t: Task, cfg: RepoConfig, source: Path, work: Path, repeats: int 
     (rd / "answer.txt").write_text("")
     g = grade_run(rd, cfg, t)
     res["null"] = g["status"]
+    res["null_detail"] = _detail(g)
     if g["status"] == "error":
         problems.append(f"null run not graded: {g['errors'][:1]}")
     elif g["pass"]:
@@ -147,6 +161,7 @@ def check_task(t: Task, cfg: RepoConfig, source: Path, work: Path, repeats: int 
         if t.grader_type.startswith("review") and g["metrics"].get("recall") not in (None, 1.0):
             problems.append(f"oracle answer recall {g['metrics'].get('recall')} != 1.0")
     res["oracle"] = outcomes
+    res["oracle_detail"] = _detail(g)
     if any(o == "error" for o in outcomes):
         problems.append("oracle run not graded (see grade.json errors)")
     elif t.gate or t.grader_type not in ("review_replay",):

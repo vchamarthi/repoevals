@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The workspace snapshot commit respects `.gitignore`: build output from `[environment].setup` stays untracked, so it
+  no longer shows up as modified binaries in the agent's workspace and diff.
+- The seeded-review "spam" probe sends findings long enough to be graded (it previously scored 0 whatever the manifest).
+- `max_ulp` is `null` when no case produced a ULP value (it was 0), and is computed for complex results.
+- `guidance suggest`: exit code 1 of `grep`/`rg`/`diff`/`cmp`/`test` and exploration of missing paths are not failed
+  commands; rule violations count runs, not findings; Claude Code 2.1.277 or later (which reads `AGENTS.md` without a
+  `CLAUDE.md`) is not told to add a `CLAUDE.md`; `--draft-with` honours `env_passthrough`.
+- Claude Code on Bedrock or Vertex keeps its provider credentials; repeated `api_retry` events and `API Error: NNN`
+  are infrastructure errors.
+
+### Added
+
+- `doctor --agent A [--model M]` sends one test prompt to the agent.
+- `run` refuses `--jobs > 1` with an editable-install `setup`/`build`, checks the agent CLI exists, and stops after
+  three consecutive agent infrastructure errors.
+- `report`: warns when a configuration passes 0.9 or more (tasks do not discriminate); paired comparisons show cost and
+  time differences.
+- `check`: `null_detail`/`oracle_detail` in `--json` (key metrics, failing tests grouped by function), and the summary
+  line distinguishes `fail(N failed)` from `fail(crash rc=-6)`.
+
 ## [0.4.1] - 2026-10-15
 
 ### Fixed

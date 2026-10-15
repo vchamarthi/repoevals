@@ -75,6 +75,10 @@ def produce(which, probe_path, out_path):
 
 
 def ulp_distance(np, got, want):
+    if got.dtype.kind == "c" and got.dtype == want.dtype:  # real and imaginary parts are floats of half the size
+        parts = [ulp_distance(np, np.ascontiguousarray(g), np.ascontiguousarray(w))
+                 for g, w in ((got.real, want.real), (got.imag, want.imag))]
+        return max((x for x in parts if x is not None), default=None)
     if got.dtype.kind != "f" or got.dtype != want.dtype or got.size == 0:
         return None
     itype = {2: np.int16, 4: np.int32, 8: np.int64}[got.dtype.itemsize]

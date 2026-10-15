@@ -25,6 +25,7 @@ import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from .agents import default_passthrough
 from .config import RepoConfig
 from .guidance import guidance_files, lint
 from .report import load_grades
@@ -48,9 +49,18 @@ ENV_PATTERNS = [
 PATHLIKE = re.compile(r"(?<![\w./-])(?:[\w.-]+/)+[\w.-]*[\w-]|"
                       r"(?<![\w./-])[\w-]+\.(?:py|pyx|pxd|c|cc|cpp|h|hpp|src|md|toml|build|cfg|txt|yml|yaml|json|rst)\b")
 MIN_ARM_RUNS = 3  # attempts per arm needed before a task is reported as worse with guidance
+# Claude Code reads AGENTS.md when a project has no CLAUDE.md since this release (changelog 2.1.277)
+CLAUDE_AGENTS_MD = (2, 1, 277)
+# exit code 1 of these means "no match" or "files differ", not a failed command
+NO_MATCH_RC1 = re.compile(r"^\s*(grep|egrep|fgrep|rg|diff|cmp|test)\b")
 EXPLORE = re.compile(r"^\s*(ls|find|tree|grep|rg|cat|head|tail|sed -n|git (ls-files|grep))\b")
 AGENT_FILES = {"claude-code": "CLAUDE.md", "codex": "AGENTS.md", "copilot": ".github/copilot-instructions.md",
                "gemini": "GEMINI.md"}
+
+
+def _version_tuple(text: str) -> tuple[int, ...] | None:
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", text or "")
+    return tuple(int(x) for x in m.groups()) if m else None
 
 
 def _norm_command(text: str, words: int = 3) -> str:
@@ -108,6 +118,10 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
                 edited = True
             if kind == "command":
                 if e.get("rc") not in (0, None) or e.get("denied"):
+                    out_ = e.get("output") or ""
+                    if e.get("rc") == 1 and not e.get("denied") and (
+                            NO_MATCH_RC1.match(text) or (EXPLORE.match(text) and "No such file" in out_)):
+                        continue
                     key = _norm_command(text)
                     if key:
                         fails[key].add(rid)
@@ -126,7 +140,7 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
                 explore[p].add(rid)
         if r.has_guidance:
             for f in (r.grade.get("integrity") or {}).get("integrity_findings", []):
-                if f.get("violation"):
+                if f.get("violation") and rid not in violation_runs[f["check"]]:
                     violations[f["check"]] += 1
                     violation_runs[f["check"]].append(rid)
     by_task_arm: dict[str, dict[str, list[bool]]] = defaultdict(lambda: defaultdict(list))
@@ -149,8 +163,11 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
             present.append(f)
     names = {Path(p).name for p in present}
     coverage = []
-    if "AGENTS.md" in names and "CLAUDE.md" not in names:
-        coverage.append("AGENTS.md exists but CLAUDE.md does not: Claude Code may not read the guidance. Add a "
+    claude_versions = [_version_tuple(r.meta.get("agent_version") or "") for r in runs
+                       if r.grade.get("agent") == "claude-code"]
+    reads_agents_md = bool(claude_versions) and all(v is not None and v >= CLAUDE_AGENTS_MD for v in claude_versions)
+    if "AGENTS.md" in names and "CLAUDE.md" not in names and not reads_agents_md:
+        coverage.append("AGENTS.md exists but CLAUDE.md does not: Claude Code before 2.1.277 does not read it. Add a "
                         "CLAUDE.md that imports it (`@AGENTS.md`).")
     if "CLAUDE.md" in names and "AGENTS.md" not in names:
         coverage.append("CLAUDE.md exists but AGENTS.md does not: Codex and most other agents read AGENTS.md.")
@@ -292,8 +309,8 @@ def llm_draft(cfg: RepoConfig, ev_md: str, out: Path, agent: str, model: str = "
     else:
         raise ValueError(f"unknown drafting agent {agent!r}: claude-code | codex | cmd:<command reading stdin>")
     with tempfile.TemporaryDirectory(prefix="repoevals-draft-") as scratch:  # no repository, tasks or hidden data
-        p = run(argv, cwd=scratch, timeout=timeout, stdin=prompt, scrub=True,
-                keep_env=["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "HOME", "PATH"])
+        passthrough = list(cfg.environment["env_passthrough"]) if "env_passthrough" in cfg.environment             else default_passthrough()
+        p = run(argv, cwd=scratch, timeout=timeout, stdin=prompt, scrub=True, keep_env=[*passthrough, "HOME", "PATH"])
     data = last_json(p.out)
     if not isinstance(data, dict) or not data:
         raise RuntimeError(f"the drafting agent returned no JSON object of files (rc={p.rc}): {p.out[-800:]}")

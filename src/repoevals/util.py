@@ -146,8 +146,9 @@ def git_init_snapshot(ws: Path, message: str) -> str:
 
 
 def git_commit(ws: Path, message: str) -> str:
+    """Commit the working tree; files ignored by .gitignore (build output) stay untracked."""
     env_args = ["-c", "user.name=repoevals", "-c", "user.email=repoevals@localhost", "-c", "commit.gpgsign=false"]
-    git(ws, "add", "-A", "-f", check=True)
+    git(ws, "add", "-A", check=True)
     git(ws, *env_args, "commit", "-q", "--no-verify", "--allow-empty", "-m", message, check=True)
     return git(ws, "rev-parse", "HEAD", check=True).out.strip()
 
