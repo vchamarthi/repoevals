@@ -370,3 +370,61 @@ def test_exec_config_is_loaded_and_reset(minisci_repo, tmp_path):
     from repoevals.config import load_config
     load_config(root=tmp_path / "other")
     assert util.EXEC_TEMPLATE == ""
+
+
+def _grade_with(minisci_repo, tmp_path, events, edit=None):
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    apply_oracle(tmp_path / "run", cfg)
+    if edit:
+        edit(ws)
+    (tmp_path / "run" / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    return grade_run(tmp_path / "run", cfg, t)
+
+
+def test_local_git_history_commands_are_not_violations(minisci_repo, tmp_path):
+    events = [{"kind": "command", "text": c, "rc": 0} for c in
+              ("git log --oneline", "git show HEAD", "git -C . status", "git rev-list --all", "git cat-file -p HEAD")]
+    g = _grade_with(minisci_repo, tmp_path, events)
+    assert not any(f["check"] == "history_mining" and f["violation"] for f in g["integrity"]["integrity_findings"])
+    from repoevals.integrity import HISTORY_RE
+    for bad in ("git fetch upstream", "git -C /other/repo log", "git --git-dir=/x/.git log", "GIT_DIR=/x git log",
+                "git remote add up https://x", "git clone https://x"):
+        assert HISTORY_RE.search(bad), bad
+
+
+def test_bytecode_in_protected_directories_is_not_a_change(minisci_repo, tmp_path):
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    cfg.protected_globs = ["tests/**"]
+    (ws / "tests" / "__pycache__").mkdir(exist_ok=True)
+    (ws / "tests" / "__pycache__" / "test_basic.cpython-312.pyc").write_bytes(b"x")
+    (ws / ".gitignore").write_text("__pycache__/\n")
+    from repoevals.grade import context
+    ch = context(tmp_path / "run", cfg, t).tree().changed(context(tmp_path / "run", cfg, t).start_sha)
+    assert not any("__pycache__" in p for p in ch)
+
+
+def test_skip_in_new_test_file_is_not_tampering_but_in_existing_is(minisci_repo, tmp_path):
+    def new_file(ws):
+        (ws / "tests" / "test_new.py").write_text("import pytest\n\n\ndef test_x():\n    pytest.skip('n/a')\n")
+
+    def existing(ws):
+        t = ws / "tests" / "test_basic.py"
+        t.write_text(t.read_text() + "\n\ndef test_y():\n    import pytest\n    pytest.skip('n/a')\n")
+    ok = _grade_with(minisci_repo, tmp_path / "a", [], new_file)
+    assert not any(f["check"] == "test_tampering" for f in ok["integrity"]["integrity_findings"])
+    bad = _grade_with(minisci_repo, tmp_path / "b", [], existing)
+    assert any(f["check"] == "test_tampering" for f in bad["integrity"]["integrity_findings"])
+
+
+def test_regrade_integrity_only_updates_flags(minisci_repo, tmp_path, capsys):
+    from repoevals.cli import main
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "runs" / "a")
+    apply_oracle(tmp_path / "runs" / "a", cfg)
+    g = grade_run(tmp_path / "runs" / "a", cfg, t)
+    assert g["integrity"]["integrity_ok"] is True
+    (ws / "sitecustomize.py").write_text("x = 1\n")  # something the checks flag
+    assert main(["--config", str(minisci_repo / "repoevals.toml"), "grade", str(tmp_path / "runs"),
+                 "--integrity-only"]) == 0
+    after = json.loads((tmp_path / "runs" / "a" / "grade.json").read_text())
+    assert after["integrity"]["integrity_ok"] is False and after["status"] == g["status"]
+    assert "integrity_ok=False" in capsys.readouterr().out

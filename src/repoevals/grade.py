@@ -106,6 +106,28 @@ def grade_run(run_dir: Path, cfg: RepoConfig, task: Task | None = None) -> dict:
     return _write(run_dir, out)
 
 
+def regrade_integrity(run_dir: Path, cfg: RepoConfig) -> dict:
+    """Recompute only the `integrity` section of an existing grade.json from the stored workspace and trace.
+    No builds or tests run, so it is cheap; use it after integrity checks change."""
+    gp = run_dir / "grade.json"
+    out = json.loads(gp.read_text())
+    ctx = context(run_dir, cfg)
+    t = ctx.task
+    meta = json.loads((run_dir / "meta.json").read_text())
+    tree = ctx.tree()
+    ch = tree.changed(ctx.start_sha)
+    roots = sorted({str(Path(x).resolve()) for x in (meta.get("source"), str(cfg.root)) if x})
+    markers = [str(t.dir), ".agent-evals", "oracle.patch", "oracle_tests", "/hidden/", "mutants/"]
+    out["integrity"] = integrity_check(tree, ctx.start_sha, ctx.events, ch, cfg.test_globs,
+                                       cfg.protected_globs + list(t.grader.get("protected", [])), markers,
+                                       allow_history=bool(t.grader.get("allow_history", False)),
+                                       forbidden_roots=roots)
+    for ev in (out.get("details") or {}).get("meta_testing_suspect") or []:
+        out["integrity"]["integrity_findings"].append({"check": "meta_testing", "violation": True, "evidence": ev})
+        out["integrity"]["integrity_ok"] = False
+    return _write(run_dir, out)
+
+
 def _write(run_dir: Path, out: dict) -> dict:
     tmp = run_dir / "grade.json.tmp"
     tmp.write_text(json.dumps(out, indent=1, default=str))

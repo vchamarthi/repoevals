@@ -107,9 +107,9 @@ process data, integrity findings and the files the agent changed. `--diff` print
 
 Create the workspace and run directory for one task without running an agent.
 
-### `grade RUN_DIR`
+### `grade RUN_DIR [--integrity-only]`
 
-Grade a run directory and write `grade.json`. Use this with your own agent harness; see
+Grade a run directory and write `grade.json`. With `--integrity-only`, only the integrity checks of already graded runs are recomputed (`RUN_DIR` may be a directory of runs); no builds or tests run. Use this with your own agent harness; see
 [Run directories](extending.md#run-directories).
 
 ### `export harbor [tasks ...] --out DIR`

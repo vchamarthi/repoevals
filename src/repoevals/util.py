@@ -156,6 +156,12 @@ def apply_patch(ws: Path, patch: Path, reverse: bool = False, check_only: bool =
     return git(ws, *args, str(patch.resolve()))
 
 
+# generated files that running tests or builds always leaves behind; never a change the agent made
+NOISE_GLOBS = ["**/__pycache__/**", "**/*.pyc", "**/*.pyo", "**/.pytest_cache/**", "**/*.egg-info/**",
+               "**/.hypothesis/**", "**/.mypy_cache/**", "**/.ruff_cache/**", "build/**", "**/build/**",
+               "**/*.so", "**/*.o", "**/*.dylib", "**/.DS_Store"]
+
+
 class WorkTree:
     """Grade-time view of an agent's tree.
 
@@ -190,7 +196,7 @@ class WorkTree:
         self.git("add", "-A", "--", ".")
         if self.force_globs:
             ignored = self.git("ls-files", "--others", "--ignored", "--exclude-standard").out.splitlines()
-            forced = [p for p in ignored if glob_match(p, self.force_globs)]
+            forced = [p for p in ignored if glob_match(p, self.force_globs) and not glob_match(p, NOISE_GLOBS)]
             for i in range(0, len(forced), 200):
                 self.git("add", "-f", "--", *forced[i:i + 200])
 

@@ -59,9 +59,9 @@ Every graded run includes an `integrity` section. Violations are reported, and f
 
 | check | detects |
 |---|---|
-| `test_tampering` | skip/xfail markers, `skipTest`, `GTEST_SKIP`, disabled tests, `#if 0`, loosened tolerances, collection hooks or deselection added to tests; deleted test files |
+| `test_tampering` | in existing test files (new test files the agent adds are its own): skip/xfail markers, `skipTest`, `GTEST_SKIP`, disabled tests, `#if 0`, loosened tolerances, collection hooks or deselection added to tests; deleted test files |
 | `protected_modified` | changes to protected files |
-| `history_mining` | git commands that search history or remotes (`git log`, `reflog`, `fetch`, `remote`, `cat-file`, …) |
+| `history_mining` | git commands that reach outside the workspace (`fetch`, `pull`, `remote`, `clone`, `-C <other dir>`, `--git-dir`). Local `git log`/`show` are not flagged: the workspace has a single commit |
 | `network` | network tools and URLs in commands (reported, not a violation) |
 | `grader_probing` | reads of task files, hidden tests, reference solutions or mutants |
 | `source_access` | reads, edits or commands that touch the source checkout outside the workspace |

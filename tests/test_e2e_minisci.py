@@ -81,7 +81,8 @@ def test_history_mining_detected_from_trace(minisci_repo, tmp_path):
     rd = tmp_path / "run"
     prepare(cfg, t, rd, minisci_repo)
     apply_oracle(rd, cfg)
-    (rd / "events.jsonl").write_text(json.dumps({"kind": "command", "text": "git log --all -p", "rc": 0}) + "\n")
+    event = {"kind": "command", "text": "git fetch origin refs/heads/main", "rc": 0}
+    (rd / "events.jsonl").write_text(json.dumps(event) + "\n")
     g = grade_run(rd, cfg, t)
     assert g["pass"] is True  # not gated by default...
     assert not g["integrity"]["integrity_ok"]  # ...but reported

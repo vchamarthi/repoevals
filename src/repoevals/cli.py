@@ -138,9 +138,17 @@ def cmd_prepare(args) -> int:
 
 
 def cmd_grade(args) -> int:
-    from .grade import grade_run
+    from .grade import grade_run, regrade_integrity
     cfg = _cfg(args)
-    g = grade_run(Path(args.run_dir).resolve(), cfg)
+    rd = Path(args.run_dir).resolve()
+    if args.integrity_only:
+        dirs = [p.parent for p in sorted(rd.rglob("grade.json")) if (p.parent / "meta.json").exists()
+                and "workspace" not in p.relative_to(rd).parts[:-1]] if not (rd / "grade.json").exists() else [rd]
+        for d in dirs:
+            g = regrade_integrity(d, cfg)
+            print(f"{d.relative_to(rd) if d != rd else d.name}: integrity_ok={g['integrity']['integrity_ok']}")
+        return 0
+    g = grade_run(rd, cfg)
     print(json.dumps({k: g[k] for k in ("task", "status", "pass", "metrics", "errors")}, indent=1, default=str))
     return 0 if g["status"] != "error" else 2
 
@@ -470,6 +478,9 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_prepare)
     p = sub.add_parser("grade", help="grade a run directory")
     p.add_argument("run_dir", help="run directory to grade (writes grade.json)")
+    p.add_argument("--integrity-only", action="store_true",
+                   help="only recompute the integrity checks of graded runs (RUN_DIR may be a directory of runs); "
+                        "no builds or tests")
     p.set_defaults(fn=cmd_grade)
     p = sub.add_parser("run", help="prepare, run an agent and grade, for tasks x arms x repeats")
     p.add_argument("tasks", nargs="*", help=TASKS_HELP)

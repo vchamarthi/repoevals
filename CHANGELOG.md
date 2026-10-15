@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Found while evaluating dpnp and mkl_fft: release-based task authoring (`author fix --base`, `--extract-tests`,
   `author mine --release-base`, `author review-replay --base`), `[repo].upstream`, setup environment variables,
   `report --compare`, package versions recorded in runs, and mkl_fft/dpnp starter configurations.
+- `grade --integrity-only`: recompute integrity checks of existing runs without rebuilding.
 - `[environment].exec`: run setup, build, test and benchmark commands through a prefix such as `docker exec`, with
   `python`/`pytest`/`pip` shims for agents running on the host.
 - Task selection supports exclusions: `!tag:legacy-env`, `!fix_*`.
@@ -41,6 +42,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   fixtures and helpers), instead of the whole class.
 
 ### Fixed
+
+- Integrity false positives found in real Claude Code runs: bytecode and build caches in protected directories,
+  harmless local `git log`/`show`, and skips in test files the agent added itself.
 
 - Background `git gc` in a workspace could race with grading and turn a pass into an error; automatic maintenance
   is disabled in workspaces and restoring the tree tolerates files vanishing.
