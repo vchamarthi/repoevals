@@ -354,3 +354,40 @@ def test_agent_timeout_leaves_children_running(tmp_path):
     run_agent("cmd:bash -c '(sleep 2; echo late > late.txt) & sleep 30'", rd, timeout=1)
     time.sleep(3)
     assert not (rd / "workspace" / "late.txt").exists()
+
+
+def test_workspace_commit_leaves_gitignored_files_untracked(tmp_path):
+    from repoevals.util import git_commit
+    ws = tmp_path / "ws"
+    (ws / "build").mkdir(parents=True)
+    (ws / ".gitignore").write_text("build/\n")
+    (ws / "a.py").write_text("x = 1\n")
+    (ws / "build" / "out.so").write_text("binary")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=ws, check=True, env=GIT_ENV)
+    git_commit(ws, "workspace")
+    tracked = git(ws, "ls-files").out.split()
+    assert "a.py" in tracked and "build/out.so" not in tracked
+
+
+def test_spam_probe_findings_are_long_enough_to_be_graded():
+    from repoevals.graders.review import parse_findings, spam_answer
+
+    class Tree:
+        def show(self, *args):
+            return "+++ b/pkg/a.py\n@@ -1,0 +10,2 @@\n+x = 1\n+y = 2\n"
+
+    class Ctx:
+        start_sha = "HEAD"
+        tree = staticmethod(lambda: Tree())
+    findings = parse_findings(spam_answer(Ctx()))
+    assert len(findings) == 2 and all(len(f["text"].strip()) >= 8 for f in findings)
+
+
+def test_ulp_distance_covers_complex_and_is_none_when_unavailable():
+    import numpy as np
+
+    from repoevals.data.numeric_runner import ulp_distance
+    a = np.array([1 + 1j], dtype=np.complex128)
+    b = np.nextafter(a.real, 2.0) + 1j * a.imag
+    assert ulp_distance(np, b, a) == 1
+    assert ulp_distance(np, np.array([1], dtype=np.int64), np.array([1], dtype=np.int64)) is None

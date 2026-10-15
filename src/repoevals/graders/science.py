@@ -103,7 +103,7 @@ def g_numeric(ctx: GradeContext) -> dict:
     n_ok = sum(c.get("ok") is True for c in cases)
     out.update(cases=cases, n_cases=len(cases), n_cases_ok=n_ok,
                case_pass_rate=round(n_ok / len(cases), 3) if cases else None,
-               max_ulp=max((c.get("max_ulp") or 0 for c in cases), default=0),
+               max_ulp=max((c["max_ulp"] for c in cases if c.get("max_ulp") is not None), default=None),
                numeric_ok=bool(cases) and n_ok / len(cases) >= float(g.get("min_case_pass", 1.0)))
     out["pass"] = bool(out["numeric_ok"] and tests_ok and out.get("build_ok", True))
     return out

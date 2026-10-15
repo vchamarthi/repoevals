@@ -580,3 +580,60 @@ def test_fail_under_fails_closed(minisci_repo, tmp_path, monkeypatch):
                                                 "pass": None}))
     assert main(["report", str(out), "--fail-under", "0.1"]) == 1
     assert main(["report", str(tmp_path / "nothing"), "--fail-under", "0.1"]) == 1
+
+
+def test_run_refuses_parallel_jobs_with_editable_install(minisci_repo, tmp_path):
+    cfg = _cfg(minisci_repo)
+    cfg.test.build = "pip install -e . --no-build-isolation -q"
+    tasks = [load_task(cfg.tasks_dir / "fix_var_ddof")]
+    with pytest.raises(RuntimeError, match="editable"):
+        run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs",
+                   RunOptions(agent="noop", jobs=4, arms=["guidance:raw"], repeats=1), progress=lambda *_: None)
+    run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs", RunOptions(agent="noop", jobs=1, arms=["guidance:raw"],
+                                                                         repeats=1), progress=lambda *_: None)
+
+
+def test_run_stops_after_repeated_infrastructure_errors(minisci_repo, tmp_path):
+    cfg = _cfg(minisci_repo)
+    tasks = [load_task(cfg.tasks_dir / "fix_var_ddof")]
+    opts = RunOptions(agent="cmd:definitely-not-an-agent-binary", arms=["guidance:raw"], repeats=6, retries=0)
+    m = run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs", opts, progress=lambda *_: None)
+    assert "consecutive agent infrastructure errors" in m["stopped_reason"]
+    assert m["counts"].get("not_run", 0) >= 1
+
+
+def test_run_fails_fast_when_agent_cli_is_missing(minisci_repo, tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    cfg = _cfg(minisci_repo)
+    tasks = [load_task(cfg.tasks_dir / "fix_var_ddof")]
+    with pytest.raises(RuntimeError, match="not found on PATH"):
+        run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs",
+                   RunOptions(agent="claude-code", arms=["guidance:raw"], repeats=1), progress=lambda *_: None)
+
+
+def test_cloud_credentials_pass_through_only_when_provider_switch_is_set():
+    from repoevals.agents import default_passthrough
+    plain = default_passthrough({})
+    assert "AWS_BEARER_TOKEN_BEDROCK" not in plain
+    bedrock = default_passthrough({"CLAUDE_CODE_USE_BEDROCK": "1"})
+    assert "AWS_BEARER_TOKEN_BEDROCK" in bedrock and "AWS_REGION" in bedrock and "ANTHROPIC_API_KEY" in bedrock
+    assert "AWS_REGION" not in default_passthrough({"CLAUDE_CODE_USE_BEDROCK": "0"})
+
+
+def test_api_retry_stream_is_an_infrastructure_error():
+    out = '{"type":"system","subtype":"api_retry","attempt":8,"max_retries":10}'
+    assert classify(1, False, out, "", [], traced=True)[0] == "infra_error"
+    assert classify(1, False, "API Error: 400 does not support this model", "", [], traced=True)[0] == "infra_error"
+
+
+def test_report_warns_at_the_ceiling_and_shows_cost_difference(tmp_path):
+    def g(arm, task, i, cost):
+        return {"task": task, "family": "fix", "grader": "hidden_tests", "arm": arm, "agent": "a", "model": "m",
+                "status": "pass", "pass": True, "repeat": i, "process": {"cost_usd": cost}, "metrics": {}}
+    grades = [g(arm, f"t{k}", i, c) for arm, c in (("guidance:raw", 2.0), ("guidance:none", 1.0))
+              for k in range(3) for i in range(2)]
+    s = summarize(grades, compare="arm")
+    assert any("do not discriminate" in h["issue"] for h in s["task_health"])
+    from repoevals.report import to_markdown
+    md = to_markdown(s)
+    assert "Δ cost $" in md and "-6.00" in md or "+6.00" in md

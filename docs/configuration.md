@@ -117,7 +117,7 @@ Targets are always shell-quoted before they are substituted.
 | `exec` | `""` | command prefix that runs setup, build, test and benchmark commands elsewhere, typically in a container: `docker exec -i {env_flags} -w {cwd} <container>`. `{cwd}` is the workspace (the container must mount it at the same path) and `{env_flags}` expands to `-e KEY=VALUE` flags. Agents started by `repoevals run` get `python`, `python3`, `pytest`, `pip` and `pip3` shims first on their `PATH` that forward to the same prefix, so an agent on your laptop can run the project's tests on another platform. See [Running tests in a container](#running-tests-in-a-container) |
 | `image` | `""` | container image used by `repoevals run --docker` without an explicit image |
 | `network` | `"bridge"` | Docker network mode for agent containers. Agents that call a model API need network access |
-| `env_passthrough` | API key variables for Anthropic, OpenAI and Gemini | environment variables passed to the agent (locally and in containers); all other credentials are removed |
+| `env_passthrough` | API key variables for Anthropic, OpenAI and Gemini, plus the AWS variables (`AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION`, `AWS_PROFILE`, access keys) when `CLAUDE_CODE_USE_BEDROCK` is set, or the Vertex variables when `CLAUDE_CODE_USE_VERTEX` is set | environment variables passed to the agent (locally and in containers) and to the `guidance suggest --draft-with` agent; all other credentials are removed |
 | `dockerfile` | `""` | Dockerfile copied into tasks exported with `repoevals export harbor` |
 
 Graders always run on the host, in the environment where repoevals is installed.

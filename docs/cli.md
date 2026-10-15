@@ -16,10 +16,10 @@ Task selection (`[tasks ...]`) accepts task ids, prefixes ending in `*`, `family
 Create `repoevals.toml` and an empty `.agent-evals/tasks/`. `--preset` starts from a starter configuration
 (`dpnp`, `dpctl`, `mkl_fft`, `mkl_random`, `mkl_umath`, `scikit-learn-intelex`, `xgboost`, `onedal`).
 
-### `doctor [tests ...]`
+### `doctor [tests ...] [--agent A] [--model M]`
 
 Check the setup: configuration, git history, tasks, test adapter, agent CLIs, `gh`, Docker, and whether guidance files
-above the runs directory would leak into every arm. With test targets, also runs them on the current tree.
+above the runs directory would leak into every arm. With test targets, also runs them on the current tree. With `--agent`, sends one trivial prompt through the same code path and credential handling as `run`, which catches a logged-out CLI, a CLI too old for the model and missing credentials.
 
 ### `list [tasks ...]`
 
@@ -60,7 +60,7 @@ Prepare a workspace, run the agent, and grade, for every selected task × arm ×
 | `--out` | `~/.cache/repoevals/runs/<repo>/<timestamp>` | output directory; `$REPOEVALS_RUNS_DIR` changes the default root. Must be outside the repository |
 | `--allow-out-in-repo` | off | allow `--out` inside the repository (agents could then read hidden material) |
 | `--include-drafts` | off | also run tasks with `status = "draft"` |
-| `--jobs` | `1` | attempts run in parallel. Builds and installs must not share mutable state (see [Configuration](configuration.md#environment)) |
+| `--jobs` | `1` | attempts run in parallel. Builds and installs must not share mutable state (see [Configuration](configuration.md#environment)). `run` refuses `--jobs` above 1 when `setup` or `build` installs the project in editable mode into the shared environment |
 | `--resume` | off | keep attempts in `--out` that already have a grade (errors are redone) |
 | `--retries` | `2` | retries, with backoff, when the agent CLI fails for infrastructure reasons |
 | `--max-cost` | none | stop starting new attempts once reported cost reaches this many US dollars |

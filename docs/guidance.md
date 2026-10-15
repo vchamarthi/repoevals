@@ -92,8 +92,10 @@ not matter. Copy the draft files into your repository and open a pull request wi
 
 ## Notes
 
-- Agents read different files: Claude Code reads `CLAUDE.md`, Codex and most others read `AGENTS.md`, Copilot reads
-  `.github/copilot-instructions.md`. A `CLAUDE.md` containing `@AGENTS.md` shares one source.
+- Agents read different files: Claude Code reads `CLAUDE.md` (and `AGENTS.md` when there is no `CLAUDE.md`, from
+  version 2.1.277), Codex and most others read `AGENTS.md`, Copilot reads `.github/copilot-instructions.md`. A
+  `CLAUDE.md` containing `@AGENTS.md` shares one source. `suggest` only asks for a `CLAUDE.md` when a run used an
+  older Claude Code or recorded no version.
 - Guidance outside the repository (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`) applies to every arm;
   `repoevals doctor` lists it.
 - Evidence comes from agent traces, so it is richest for Claude Code and Codex. `cmd:` agents produce no trace.

@@ -30,6 +30,24 @@ from .util import fmt, run
 
 DEFAULT_PASSTHROUGH = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY",
                        "OPENAI_BASE_URL", "GEMINI_API_KEY"]
+# Claude Code on a cloud provider authenticates with these; they are passed only when the provider switch is set
+CLOUD_PASSTHROUGH = {
+    "CLAUDE_CODE_USE_BEDROCK": ["CLAUDE_CODE_USE_BEDROCK", "AWS_BEARER_TOKEN_BEDROCK", "AWS_REGION",
+                                "AWS_DEFAULT_REGION", "AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+                                "AWS_SESSION_TOKEN"],
+    "CLAUDE_CODE_USE_VERTEX": ["CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_VERTEX_PROJECT_ID", "CLOUD_ML_REGION",
+                               "GOOGLE_APPLICATION_CREDENTIALS"],
+}
+
+
+def default_passthrough(environ=None) -> list[str]:
+    """Variables the agent may keep when `[environment].env_passthrough` is not set."""
+    environ = os.environ if environ is None else environ
+    extra = [v for switch, names in CLOUD_PASSTHROUGH.items() if environ.get(switch) not in (None, "", "0")
+             for v in names]
+    return [*DEFAULT_PASSTHROUGH, *extra]
+
+
 # the agent's final message itself says it could not work (usage caps end the session with exit code 0)
 LIMIT_ANSWER = re.compile(
     r"^\W*((you('ve| have)? )?(hit|reached) your (session|usage|weekly|daily) limit|usage limit (reached|exceeded)|"
@@ -40,7 +58,8 @@ INFRA_PATTERNS = re.compile(
     r"(rate[ _-]?limit|session limit|usage limit|"
     r"429|overloaded|529|authenticat|unauthori[sz]ed|401\b|invalid api key|api key|credit balance|"
     r"quota|insufficient_quota|service unavailable|503\b|502\b|connection (refused|reset|error)|ENOTFOUND|"
-    r"ECONNRESET|not logged in|please run .*login|command not found|No such file or directory: '(claude|codex)')",
+    r"ECONNRESET|\"subtype\":\"api_retry\"|API Error: \d{3}|not logged in|please run .*login|command not found|"
+    r"No such file or directory: '(claude|codex)')",
     re.I)
 VERSION_ARGS = {"claude-code": ["claude", "--version"], "codex": ["codex", "--version"]}
 
@@ -128,7 +147,7 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
     else:
         raise ValueError(f"unknown agent {agent!r}: claude-code | codex | noop | cmd:<template>")
     argv += shlex.split(extra_args)
-    passthrough = DEFAULT_PASSTHROUGH if env_passthrough is None else list(env_passthrough)  # [] means none
+    passthrough = default_passthrough() if env_passthrough is None else list(env_passthrough)  # [] means none
     container = ""
     if docker:
         import uuid

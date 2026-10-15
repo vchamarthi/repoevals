@@ -238,3 +238,34 @@ def test_drafting_agent_runs_in_an_empty_scratch_directory(minisci_repo, runs, t
     r = S.suggest(runs, cfg, tmp_path / "o", draft_with=f"cmd:{sys.executable} {fake}")
     cwd, n = (Path(r["draft_dir"]) / "AGENTS.md").read_text().rsplit(" ", 1)
     assert n == "0" and str(minisci_repo) not in cwd
+
+
+def test_no_match_and_missing_path_exploration_are_not_failing_commands(minisci_repo, tmp_path):
+    root = tmp_path / "runs2"
+    cmds = [{"kind": "command", "text": "grep -rn foo src", "rc": 1, "output": ""},
+            {"kind": "command", "text": "cat nothere.txt", "rc": 1,
+             "output": "cat: nothere.txt: No such file or directory"},
+            {"kind": "command", "text": "make all", "rc": 2, "output": "boom"}]
+    for i in range(2):
+        _run(root, f"r{i}", "t1", "guidance:raw", True, cmds)
+    ev = S.analyze(root, load_config(minisci_repo / "repoevals.toml"))
+    assert [f["item"] for f in ev["failing_commands"]] == ["make all"]
+
+
+def test_rule_violations_count_runs_not_findings(minisci_repo, tmp_path):
+    root = tmp_path / "runs3"
+    _run(root, "r0", "t1", "guidance:raw", True, [], violations=["protected_modified"] * 5)
+    _run(root, "r1", "t1", "guidance:raw", True, [], violations=["protected_modified"])
+    ev = S.analyze(root, load_config(minisci_repo / "repoevals.toml"))
+    assert ev["rule_violations"][0]["runs"] == 2
+
+
+def test_claude_code_that_reads_agents_md_needs_no_claude_md(minisci_repo, tmp_path):
+    def versions(v):
+        root = tmp_path / ("runs-" + v)
+        _run(root, "r0", "t1", "guidance:raw", True, [])
+        meta = json.loads((root / "r0" / "meta.json").read_text())
+        (root / "r0" / "meta.json").write_text(json.dumps({**meta, "agent_version": v + " (Claude Code)"}))
+        return S.analyze(root, load_config(minisci_repo / "repoevals.toml"))["coverage"]
+    assert any("CLAUDE.md" in c for c in versions("2.1.276"))
+    assert not any("Claude Code before" in c for c in versions("2.1.300"))

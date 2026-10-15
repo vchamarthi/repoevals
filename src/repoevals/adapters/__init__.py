@@ -48,7 +48,16 @@ class TestResult:
     def summary(self) -> dict:
         return {"status": self.status, "passed": self.passed, "failed": self.failed, "skipped": self.skipped,
                 "rc": self.rc, "seconds": round(self.seconds, 2), "command": self.command,
-                "failing": self.failing[:50], "log_tail": self.log[-4000:]}
+                "failing": self.failing[:50], "failing_total": len(self.failing),
+                "failing_by_test": self.failing_by_test(), "log_tail": self.log[-4000:]}
+
+    def failing_by_test(self, limit: int = 30) -> dict[str, int]:
+        """Failing test ids grouped by test function (parametrization stripped), most failures first."""
+        counts: dict[str, int] = {}
+        for name in self.failing:
+            key = name.split("[", 1)[0]
+            counts[key] = counts.get(key, 0) + 1
+        return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit])
 
 
 class Adapter:

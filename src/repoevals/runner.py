@@ -14,6 +14,8 @@ import json
 import os
 import platform
 import random
+import re
+import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,6 +26,10 @@ from . import __version__, util
 from .config import RepoConfig
 from .task import Task, host_supports
 from .util import git, package_versions, within
+
+# `pip install -e .` / `--editable` / `setup.py develop` point the shared environment at one workspace
+_EDITABLE = re.compile(r"(\s-e\s|--editable|setup\.py\s+develop)")
+MAX_INFRA_STREAK = 3  # stop the run after this many attempts in a row fail with an agent infrastructure error
 
 
 def default_runs_root(cfg: RepoConfig) -> Path:
@@ -82,6 +88,17 @@ def run_matrix(cfg: RepoConfig, tasks: list[Task], source: Path, out: Path, opts
     from .grade import grade_run
     from .workspace import prepare, update_meta
 
+    exe = {"claude-code": "claude", "codex": "codex"}.get(opts.agent)
+    if exe and not shutil.which(exe):
+        raise RuntimeError(f"agent CLI `{exe}` not found on PATH (agent {opts.agent})")
+    if opts.jobs > 1 and not util.EXEC_TEMPLATE:
+        editable = [k for k, cmd in (("environment].setup", cfg.environment.get("setup", "")),
+                                     ("test].build", cfg.test.build)) if _EDITABLE.search(str(cmd))]
+        if editable:
+            raise RuntimeError(
+                f"--jobs {opts.jobs}: [{'], ['.join(editable)}] installs the project in editable mode into the shared "
+                "environment, so parallel workspaces would import each other's code. Run with --jobs 1, use "
+                "[environment].exec, or build in the workspace (e.g. `build_ext --inplace`).")
     out.mkdir(parents=True, exist_ok=True)
     version = agent_version(opts.agent)
     jobs = [(t, arm, rep) for t in tasks for arm in opts.arms for rep in range(opts.repeats)]
@@ -98,7 +115,7 @@ def run_matrix(cfg: RepoConfig, tasks: list[Task], source: Path, out: Path, opts
                 "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     (out / "run.json").write_text(json.dumps(manifest, indent=1))
     lock = threading.Lock()
-    state = {"cost": 0.0, "stopped": "", "counts": {}, "warned": False}
+    state = {"cost": 0.0, "stopped": "", "counts": {}, "warned": False, "infra_streak": 0}
     env_pass = list(cfg.environment["env_passthrough"]) if "env_passthrough" in cfg.environment else None
     network = str(cfg.environment.get("network", "bridge"))
 
@@ -136,6 +153,11 @@ def run_matrix(cfg: RepoConfig, tasks: list[Task], source: Path, out: Path, opts
                 if res.status != "infra_error" or attempts > opts.retries:
                     break
                 time.sleep(min(300, 15 * 2 ** (attempts - 1)))
+            with lock:
+                state["infra_streak"] = state["infra_streak"] + 1 if res.status == "infra_error" else 0
+                if state["infra_streak"] >= MAX_INFRA_STREAK and not state["stopped"]:
+                    state["stopped"] = (f"{state['infra_streak']} consecutive agent infrastructure errors "
+                                        f"({res.reason}); fix the agent setup and rerun with --resume")
             record(rd, opts.agent, opts.model, res, attempts=attempts, version=version)
             update_meta(rd, repeat=rep, label=opts.label or None)
             g = grade_run(rd, cfg, t)

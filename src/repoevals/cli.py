@@ -122,7 +122,7 @@ def cmd_check(args) -> int:
     for r in res:
         bad += r["status"] == "problem"
         print(f"{r['status'].upper():8s} {r['task']}: " + ("; ".join(r.get("problems", [])) or r.get("why", "")
-                                                           or f"null={r.get('null')} oracle={r.get('oracle')}"))
+                                                           or f"null={_null_summary(r)} oracle={r.get('oracle')}"))
     if args.json:
         from .util import package_versions
         Path(args.json).write_text(json.dumps({"tasks": res, "packages": package_versions(),
@@ -268,6 +268,31 @@ def cmd_show(args) -> int:
     return 0
 
 
+def _null_summary(r: dict) -> str:
+    """`fail`, `fail(16 failed)` or `fail(crash rc=-6)`: whether the untouched workspace failed by test or by crash."""
+    d, null = r.get("null_detail") or {}, r.get("null")
+    if d.get("rc") is not None and d["rc"] < 0:
+        return f"{null}(crash rc={d['rc']})"
+    return f"{null}({d['failed']} failed)" if d.get("failed") else str(null)
+
+
+def _probe_agent(cfg, agent: str, model: str) -> tuple[bool, str]:
+    """Send one trivial prompt through the same code path and environment scrubbing as `run`."""
+    import tempfile
+
+    from .agents import run_agent
+    env_pass = list(cfg.environment["env_passthrough"]) if "env_passthrough" in cfg.environment else None
+    with tempfile.TemporaryDirectory(prefix="repoevals-probe-") as td:
+        rd = Path(td)
+        (rd / "workspace").mkdir()
+        (rd / "instruction.md").write_text("Reply with the single word OK. Do not use any tools.")
+        res = run_agent(agent, rd, model=model, timeout=180, env_passthrough=env_pass)
+    label = f"agent {agent}{' (' + model + ')' if model else ''} test prompt"
+    if res.status != "ok":
+        return False, f"{label}: {res.status}: {res.reason or res.answer[-200:]}"
+    return True, f"{label}: answered {res.answer.strip()[:40]!r} in {res.seconds:.0f}s"
+
+
 def cmd_doctor(args) -> int:
     import shutil as sh
 
@@ -300,6 +325,8 @@ def cmd_doctor(args) -> int:
         line(None if not sh.which(exe) else True, f"{agent}: {sh.which(exe) or 'not installed'}")
     line(None if not sh.which("gh") else True, f"gh (review-replay authoring): {sh.which('gh') or 'not installed'}")
     line(None if not sh.which("docker") else True, f"docker: {sh.which('docker') or 'not installed'}")
+    if args.agent:
+        line(*_probe_agent(cfg, args.agent, args.model or ""))
     from .runner import default_runs_root
     from .workspace import ancestor_guidance
     root = default_runs_root(cfg)
@@ -532,6 +559,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_show)
     p = sub.add_parser("doctor", help="check that repoevals, git, the test setup and agent CLIs are ready")
     p.add_argument("tests", nargs="*", help="test targets to try running on the current tree")
+    p.add_argument("--agent", help="also send one test prompt to this agent (claude-code | codex) to prove it works")
+    p.add_argument("--model", help="model for --agent")
     p.set_defaults(fn=cmd_doctor)
     p = sub.add_parser("guidance", help="improve agent guidance files: evidence, drafts, and A/B verification")
     gsub = p.add_subparsers(dest="guidance_cmd", required=True)
