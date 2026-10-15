@@ -220,7 +220,8 @@ def spam_answer(ctx: GradeContext) -> str:
             m = re.search(r"\+(\d+)", ln)
             line = int(m.group(1)) if m else 0
         elif ln.startswith("+") and cur:
-            findings.append({"file": cur, "line": line, "severity": "minor", "rule": "x", "message": "possible problem on this line"})
+            findings.append({"file": cur, "line": line, "severity": "minor", "rule": "x",
+                             "message": "possible problem on this line"})
             line += 1
     return "```json\n" + json.dumps(findings[:2000]) + "\n```"
 

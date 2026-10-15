@@ -385,6 +385,7 @@ def test_spam_probe_findings_are_long_enough_to_be_graded():
 
 def test_ulp_distance_covers_complex_and_is_none_when_unavailable():
     import numpy as np
+
     from repoevals.data.numeric_runner import ulp_distance
     a = np.array([1 + 1j], dtype=np.complex128)
     b = np.nextafter(a.real, 2.0) + 1j * a.imag

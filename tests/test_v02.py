@@ -587,8 +587,8 @@ def test_run_refuses_parallel_jobs_with_editable_install(minisci_repo, tmp_path)
     cfg.test.build = "pip install -e . --no-build-isolation -q"
     tasks = [load_task(cfg.tasks_dir / "fix_var_ddof")]
     with pytest.raises(RuntimeError, match="editable"):
-        run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs", RunOptions(agent="noop", jobs=4, arms=["guidance:raw"], repeats=1),
-                   progress=lambda *_: None)
+        run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs",
+                   RunOptions(agent="noop", jobs=4, arms=["guidance:raw"], repeats=1), progress=lambda *_: None)
     run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs", RunOptions(agent="noop", jobs=1, arms=["guidance:raw"],
                                                                          repeats=1), progress=lambda *_: None)
 
@@ -607,8 +607,8 @@ def test_run_fails_fast_when_agent_cli_is_missing(minisci_repo, tmp_path, monkey
     cfg = _cfg(minisci_repo)
     tasks = [load_task(cfg.tasks_dir / "fix_var_ddof")]
     with pytest.raises(RuntimeError, match="not found on PATH"):
-        run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs", RunOptions(agent="claude-code", arms=["guidance:raw"], repeats=1),
-                   progress=lambda *_: None)
+        run_matrix(cfg, tasks, minisci_repo, tmp_path / "runs",
+                   RunOptions(agent="claude-code", arms=["guidance:raw"], repeats=1), progress=lambda *_: None)
 
 
 def test_cloud_credentials_pass_through_only_when_provider_switch_is_set():

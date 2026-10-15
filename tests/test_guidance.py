@@ -243,7 +243,8 @@ def test_drafting_agent_runs_in_an_empty_scratch_directory(minisci_repo, runs, t
 def test_no_match_and_missing_path_exploration_are_not_failing_commands(minisci_repo, tmp_path):
     root = tmp_path / "runs2"
     cmds = [{"kind": "command", "text": "grep -rn foo src", "rc": 1, "output": ""},
-            {"kind": "command", "text": "cat nothere.txt", "rc": 1, "output": "cat: nothere.txt: No such file or directory"},
+            {"kind": "command", "text": "cat nothere.txt", "rc": 1,
+             "output": "cat: nothere.txt: No such file or directory"},
             {"kind": "command", "text": "make all", "rc": 2, "output": "boom"}]
     for i in range(2):
         _run(root, f"r{i}", "t1", "guidance:raw", True, cmds)

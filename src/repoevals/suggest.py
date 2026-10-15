@@ -309,7 +309,8 @@ def llm_draft(cfg: RepoConfig, ev_md: str, out: Path, agent: str, model: str = "
     else:
         raise ValueError(f"unknown drafting agent {agent!r}: claude-code | codex | cmd:<command reading stdin>")
     with tempfile.TemporaryDirectory(prefix="repoevals-draft-") as scratch:  # no repository, tasks or hidden data
-        passthrough = list(cfg.environment["env_passthrough"]) if "env_passthrough" in cfg.environment             else default_passthrough()
+        passthrough = (list(cfg.environment["env_passthrough"]) if "env_passthrough" in cfg.environment
+                       else default_passthrough())
         p = run(argv, cwd=scratch, timeout=timeout, stdin=prompt, scrub=True, keep_env=[*passthrough, "HOME", "PATH"])
     data = last_json(p.out)
     if not isinstance(data, dict) or not data:
