@@ -112,6 +112,7 @@ Targets are always shell-quoted before they are substituted.
 |---|---|---|
 | `setup` | `""` | shell command run in every fresh workspace before the agent starts, e.g. a native build. Output goes to `setup.log` in the run directory. `$REPOEVALS_ROOT` (your repository), `$REPOEVALS_SOURCE` and `$REPOEVALS_TASK_DIR` are set, so it can call scripts kept in `.agent-evals/` |
 | `setup_timeout_sec` | `7200` | time limit for `setup` |
+| `setup_retries` | `2` | extra attempts when `setup` fails (builds can flake, e.g. a compiler crashing under emulation); the log keeps every attempt |
 | `submodules` | `false` | materialize git submodules at the base revision (initialize them in the source checkout first) |
 | `exec` | `""` | command prefix that runs setup, build, test and benchmark commands elsewhere, typically in a container: `docker exec -i {env_flags} -w {cwd} <container>`. `{cwd}` is the workspace (the container must mount it at the same path) and `{env_flags}` expands to `-e KEY=VALUE` flags. Agents started by `repoevals run` get `python`, `python3`, `pytest`, `pip` and `pip3` shims first on their `PATH` that forward to the same prefix, so an agent on your laptop can run the project's tests on another platform. See [Running tests in a container](#running-tests-in-a-container) |
 | `image` | `""` | container image used by `repoevals run --docker` without an explicit image |

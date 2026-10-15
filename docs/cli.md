@@ -141,7 +141,7 @@ Improve agent guidance files. See [Improving agent guidance](guidance.md).
 | subcommand | description |
 |---|---|
 | `suggest RUNS [--out DIR] [--draft-with AGENT] [--model M] [--min-runs N]` | mine graded runs for problems guidance could prevent; write `evidence.md`, `evidence.json` and a `draft/` directory |
-| `verify DRAFT [tasks ...] --agent A [--repeats N] [--baseline ARM] [--jobs N] [--exclude-tasks-in RUNS]` | run tasks with the current guidance and with the draft overlaid; print the paired difference and write `verify.md` |
+| `verify DRAFT [tasks ...] --agent A [--repeats N] [--baseline ARM] [--jobs N] [--exclude-tasks-in RUNS] [--resume]` | run tasks with the current guidance and with the draft overlaid; print the paired difference and write `verify.md` |
 | `lint [--strict]` | same as `guidance-lint` |
 
 ### `guidance-lint [--strict]`

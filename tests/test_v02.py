@@ -428,3 +428,19 @@ def test_regrade_integrity_only_updates_flags(minisci_repo, tmp_path, capsys):
     after = json.loads((tmp_path / "runs" / "a" / "grade.json").read_text())
     assert after["integrity"]["integrity_ok"] is False and after["status"] == g["status"]
     assert "integrity_ok=False" in capsys.readouterr().out
+
+
+def test_setup_is_retried_after_a_flaky_failure(minisci_repo, tmp_path):
+    marker = tmp_path / "attempted"
+    with open(minisci_repo / "repoevals.toml", "a") as fh:
+        fh.write(f'\n[environment]\nsetup = "test -e {marker} || {{ : > {marker}; echo flaky >&2; exit 139; }}"\n')
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    log = (tmp_path / "run" / "setup.log").read_text()
+    assert "setup attempt 1: rc=139" in log and "setup attempt 2: rc=0" in log
+
+
+def test_errored_attempts_join_their_configuration():
+    grades = [{"task": "t1", "agent": "a", "model": "m1", "arm": "raw", "status": "pass", "pass": True},
+              {"task": "t2", "agent": "a", "model": None, "arm": "raw", "status": "error", "pass": None}]
+    s = summarize(grades)
+    assert list(s["arms"]) == ["a|m1|raw"] and s["arms"]["a|m1|raw"]["status"] == {"pass": 1, "error": 1}

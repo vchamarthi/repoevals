@@ -66,7 +66,20 @@ def _dims(key: str) -> dict:
     return dict(zip(DIMENSIONS, parts, strict=False))
 
 
+def _fill_models(grades: list[dict]) -> None:
+    """Attempts that failed before the agent ran have no resolved model: attribute them to the configuration they
+    belong to (same label, agent and arm) so errors are not split into a configuration of their own."""
+    known: dict[tuple, str] = {}
+    for g in grades:
+        if g.get("model"):
+            known.setdefault((g.get("label"), g.get("agent"), g.get("arm")), g["model"])
+    for g in grades:
+        if not g.get("model"):
+            g["model"] = known.get((g.get("label"), g.get("agent"), g.get("arm")))
+
+
 def summarize(grades: list[dict], compare: str = "") -> dict:
+    _fill_models(grades)
     by_arm: dict[str, dict[str, list[bool]]] = defaultdict(lambda: defaultdict(list))
     by_family: dict[str, dict[str, dict[str, list[bool]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     scores: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))

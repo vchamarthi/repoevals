@@ -173,8 +173,13 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
         # setup runs before the agent, so it may use files the agent never sees (e.g. scripts in .agent-evals/)
         env = {**cfg.test.env, "REPOEVALS_SOURCE": str(source.resolve()), "REPOEVALS_ROOT": str(cfg.root),
                "REPOEVALS_TASK_DIR": str(task.dir)}
-        sp = run_shell(setup, cwd=ws, timeout=float(cfg.environment.get("setup_timeout_sec", 7200)), env=env)
-        (run_dir / "setup.log").write_text(sp.out[-200000:])
+        log = []
+        for attempt in range(1 + int(cfg.environment.get("setup_retries", 2))):  # builds can flake (emulation, I/O)
+            sp = run_shell(setup, cwd=ws, timeout=float(cfg.environment.get("setup_timeout_sec", 7200)), env=env)
+            log.append(f"=== setup attempt {attempt + 1}: rc={sp.rc}\n{sp.out[-200000:]}")
+            if sp.ok:
+                break
+        (run_dir / "setup.log").write_text("\n".join(log))
         if not sp.ok:
             lines = sp.out.strip().splitlines()
             errors = [x for x in lines[-300:] if re.search(r"error|fatal|not found|cannot|no such|failed", x, re.I)]

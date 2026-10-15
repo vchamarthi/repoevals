@@ -343,7 +343,7 @@ def cmd_guidance(args) -> int:
             default_runs_root(cfg) / f"guidance-verify-{time.strftime('%Y%m%d-%H%M%S')}"
         arms = [args.baseline, f"guidance:overlay={draft}"]
         opts = RunOptions(agent=args.agent, arms=arms, repeats=args.repeats, model=args.model or "",
-                          jobs=args.jobs, retries=args.retries)
+                          jobs=args.jobs, retries=args.retries, resume=args.resume)
         print(f"runs: {out}")
         run_matrix(cfg, tasks, _source(args, cfg), out, opts)
         s = summarize(load_grades(out), compare="arm")
@@ -547,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--repeats", type=int, default=5, help="attempts per task and arm (default: 5)")
     g.add_argument("--jobs", type=int, default=1, help="attempts to run in parallel")
     g.add_argument("--retries", type=int, default=2, help="retries after agent infrastructure errors")
+    g.add_argument("--resume", action="store_true", help="keep attempts in --out that already have a grade")
     g.add_argument("--include-drafts", action="store_true", help="also use draft tasks")
     g.add_argument("--exclude-tasks-in", metavar="RUNS",
                    help="skip tasks that appear in these runs (verify on tasks the evidence did not come from)")

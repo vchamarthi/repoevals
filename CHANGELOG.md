@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Found while evaluating dpnp and mkl_fft: release-based task authoring (`author fix --base`, `--extract-tests`,
   `author mine --release-base`, `author review-replay --base`), `[repo].upstream`, setup environment variables,
   `report --compare`, package versions recorded in runs, and mkl_fft/dpnp starter configurations.
+- `[environment].setup_retries` (default 2); `guidance verify --resume`; errored attempts are attributed to their
+  configuration in reports.
 - `grade --integrity-only`: recompute integrity checks of existing runs without rebuilding.
 - `[environment].exec`: run setup, build, test and benchmark commands through a prefix such as `docker exec`, with
   `python`/`pytest`/`pip` shims for agents running on the host.
