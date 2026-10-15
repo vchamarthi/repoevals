@@ -140,6 +140,9 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
                 regressions.append({"task": task, "arm": arm, "pass_rate": round(a, 2), "without": round(b, 2),
                                     "runs": len(res) + len(none)})
     present = [p.relative_to(cfg.root).as_posix() for p in guidance_files(cfg.root, cfg.guidance_globs)]
+    for f in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"):
+        if (cfg.root / f).exists() and f not in present:  # exists even if [guidance].globs does not cover it
+            present.append(f)
     names = {Path(p).name for p in present}
     coverage = []
     if "AGENTS.md" in names and "CLAUDE.md" not in names:
@@ -304,12 +307,16 @@ def llm_draft(cfg: RepoConfig, ev_md: str, out: Path, agent: str, model: str = "
 def suggest(runs_root: Path, cfg: RepoConfig, out: Path, draft_with: str = "", model: str = "",
             min_runs: int = 2) -> dict:
     ev = analyze(runs_root, cfg, min_runs)
+    if not ev["runs"]:
+        raise RuntimeError(f"no graded runs found under {runs_root}")
     sugg = suggestions(ev)
     out.mkdir(parents=True, exist_ok=True)
     md = evidence_markdown(ev, sugg)
     (out / "evidence.json").write_text(json.dumps({**ev, "suggestions": sugg}, indent=1))
     (out / "evidence.md").write_text(md)
     draft_dir = out / "draft"
+    if draft_with and not sugg:  # nothing to base a rewrite on: do not ask an agent to invent changes
+        draft_with = ""
     written = llm_draft(cfg, md, draft_dir, draft_with, model) if draft_with else \
         deterministic_draft(cfg, sugg, draft_dir)
     return {"evidence": ev, "suggestions": sugg, "draft_dir": str(draft_dir), "draft_files": written,

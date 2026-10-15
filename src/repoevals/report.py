@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -19,9 +20,14 @@ def load_grades(root: Path) -> list[dict]:
     """Every grade.json under root that repoevals wrote next to a meta.json. Unreadable grades are returned as
     status "error" records instead of being dropped, so they are visible in the report."""
     out = []
-    for p in sorted(root.rglob("grade.json")):
-        if not (p.parent / "meta.json").exists() or "workspace" in p.relative_to(root).parts[:-1]:
-            continue
+    found = []
+    for dirpath, dirnames, files in os.walk(root, followlinks=True):  # runs may be symlinked into a subset
+        if "workspace" in dirnames:
+            dirnames.remove("workspace")
+        dirnames[:] = [d for d in dirnames if d != ".repoevals"]
+        if "grade.json" in files and "meta.json" in files:
+            found.append(Path(dirpath) / "grade.json")
+    for p in sorted(found):
         try:
             g = json.loads(p.read_text())
         except (ValueError, OSError) as e:

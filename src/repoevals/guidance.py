@@ -26,6 +26,8 @@ def claims(text: str) -> list[str]:
         tok = tok.strip().rstrip(".,:;)")
         if tok.startswith(("http", "-", "$", "<")) or "*" in tok or "{" in tok:
             continue
+        if re.fullmatch(r"\.[\w.]+", tok):  # a bare extension (`.c`, `.c.src`), not a path
+            continue
         if "/" in tok or EXT.search(tok):
             out.append(tok.split("::")[0].split(":")[0])
     return out

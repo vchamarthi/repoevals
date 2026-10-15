@@ -154,3 +154,32 @@ def test_suggestions_are_deduplicated(minisci_repo, runs):
 
 def test_draft_prompt_forbids_task_specific_hints():
     assert "never mention those tasks" in S.DRAFT_PROMPT
+
+
+def test_report_and_suggest_follow_symlinked_runs(minisci_repo, runs, tmp_path):
+    from repoevals.report import load_grades
+    subset = tmp_path / "subset"
+    subset.mkdir()
+    (subset / "r1").symlink_to(runs / "r1")
+    (subset / "r3").symlink_to(runs / "r3")
+    assert len(load_grades(subset)) == 2
+    cfg = load_config(minisci_repo / "repoevals.toml")
+    assert S.analyze(subset, cfg)["runs"] == 2
+
+
+def test_suggest_requires_runs_and_skips_llm_without_evidence(minisci_repo, tmp_path):
+    cfg = load_config(minisci_repo / "repoevals.toml")
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(RuntimeError, match="no graded runs"):
+        S.suggest(tmp_path / "empty", cfg, tmp_path / "o")
+    (minisci_repo / "CLAUDE.md").write_text("@AGENTS.md\n")
+    only = tmp_path / "ok"
+    _run(only, "r1", "t1", "guidance:raw", True, [])
+    r = S.suggest(only, cfg, tmp_path / "o2", draft_with="cmd:definitely-not-run")
+    assert r["drafted_by"] == "deterministic"  # no suggestions: the (missing) drafting agent was never started
+
+
+def test_lint_ignores_bare_extensions(tmp_path):
+    from repoevals.guidance import claims
+    assert claims("Edit `*.c.src` templates, not `.c` or `.c.src` files; see `mkl_fft/src/a.c`") == [
+        "mkl_fft/src/a.c"]
