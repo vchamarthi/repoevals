@@ -9,15 +9,21 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .util import glob_match
+from .util import glob_match, run
 
 PATHLIKE = re.compile(r"`([^`\s]+)`")
 EXT = re.compile(r"\.(py|pyx|pxd|pxi|c|cc|cpp|cxx|h|hpp|cu|toml|cfg|ini|ya?ml|json|md|rst|txt|sh|cmake|bzl|in|src)$")
 
 
-def guidance_files(root: Path, globs: list[str]) -> list[Path]:
+EVAL_DIRS = [".agent-evals/**", "**/node_modules/**", "**/.venv/**", "**/venv/**", "runs/**"]
+
+
+def guidance_files(root: Path, globs: list[str], exclude: list[str] | None = None) -> list[Path]:
+    """The repository's guidance files. Evaluation artifacts (tasks, drafts, run output) are never guidance."""
+    skip = EVAL_DIRS + list(exclude or [])
     return sorted(p for p in root.rglob("*") if p.is_file() and ".git/" not in p.relative_to(root).as_posix() + "/"
-                  and glob_match(p.relative_to(root).as_posix(), globs))
+                  and glob_match(p.relative_to(root).as_posix(), globs)
+                  and not glob_match(p.relative_to(root).as_posix(), skip))
 
 
 def claims(text: str) -> list[str]:
@@ -33,12 +39,19 @@ def claims(text: str) -> list[str]:
     return out
 
 
-def lint(root: Path, globs: list[str]) -> list[dict]:
+def _ignored(root: Path, claim: str) -> bool:
+    """Whether git ignores the path: a generated artifact the guidance may legitimately describe."""
+    return run(["git", "check-ignore", "-q", "--", claim], cwd=root).rc == 0
+
+
+def lint(root: Path, globs: list[str], exclude: list[str] | None = None) -> list[dict]:
     results = []
-    for f in guidance_files(root, globs):
+    for f in guidance_files(root, globs, exclude):
         text = f.read_text(errors="replace")
         for c in sorted(set(claims(text))):
             cand = [root / c.lstrip("/"), f.parent / c]
             ok = any(p.exists() for p in cand) or any(root.glob(f"**/{Path(c).name}")) and "/" not in c
+            rel = (f.parent / c).relative_to(root).as_posix() + ("/" if c.endswith("/") else "")
+            ok = ok or _ignored(root, c) or _ignored(root, rel)
             results.append({"file": f.relative_to(root).as_posix(), "claim": c, "exists": bool(ok)})
     return results

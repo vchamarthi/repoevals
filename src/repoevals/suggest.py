@@ -46,6 +46,7 @@ ENV_PATTERNS = [
 ]
 PATHLIKE = re.compile(r"(?<![\w./-])(?:[\w.-]+/)+[\w.-]*[\w-]|"
                       r"(?<![\w./-])[\w-]+\.(?:py|pyx|pxd|c|cc|cpp|h|hpp|src|md|toml|build|cfg|txt|yml|yaml|json|rst)\b")
+MIN_ARM_RUNS = 3  # attempts per arm needed before a task is reported as worse with guidance
 EXPLORE = re.compile(r"^\s*(ls|find|tree|grep|rg|cat|head|tail|sed -n|git (ls-files|grep))\b")
 AGENT_FILES = {"claude-code": "CLAUDE.md", "codex": "AGENTS.md", "copilot": ".github/copilot-instructions.md",
                "gemini": "GEMINI.md"}
@@ -135,13 +136,13 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
     for task, arms in sorted(by_task_arm.items()):
         none = arms.get("guidance:none")
         for arm, res in arms.items():
-            if arm == "guidance:none" or not none:
-                continue
+            if arm == "guidance:none" or not none or min(len(res), len(none)) < MIN_ARM_RUNS:
+                continue  # too few attempts per arm to tell guidance from noise
             a, b = sum(res) / len(res), sum(none) / len(none)
             if a < b:
                 regressions.append({"task": task, "arm": arm, "pass_rate": round(a, 2), "without": round(b, 2),
                                     "runs": len(res) + len(none)})
-    present = [p.relative_to(cfg.root).as_posix() for p in guidance_files(cfg.root, cfg.guidance_globs)]
+    present = [p.relative_to(cfg.root).as_posix() for p in guidance_files(cfg.root, cfg.guidance_globs, cfg.eval_globs)]
     for f in ("AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"):
         if (cfg.root / f).exists() and f not in present:  # exists even if [guidance].globs does not cover it
             present.append(f)
@@ -178,7 +179,7 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
         "arm_regressions": regressions,
         "rule_violations": [{"check": k, "runs": v, "examples": violation_runs[k][:3]}
                             for k, v in violations.most_common()],
-        "stale": [x for x in lint(cfg.root, cfg.guidance_globs) if not x["exists"]],
+        "stale": [x for x in lint(cfg.root, cfg.guidance_globs, cfg.eval_globs) if not x["exists"]],
         "coverage": coverage,
     }
 
@@ -279,7 +280,7 @@ def llm_draft(cfg: RepoConfig, ev_md: str, out: Path, agent: str, model: str = "
     """Ask an agent CLI to write the revised guidance files (it reads only the evidence and the current files)."""
     files = "\n\n".join(f"## {p}\n\n```markdown\n{(cfg.root / p).read_text(errors='replace')}\n```"
                         for p in (x.relative_to(cfg.root).as_posix()
-                                  for x in guidance_files(cfg.root, cfg.guidance_globs))) or "(none)"
+                                  for x in guidance_files(cfg.root, cfg.guidance_globs, cfg.eval_globs))) or "(none)"
     prompt = DRAFT_PROMPT.format(repo=cfg.id, evidence=ev_md, files=files)
     if agent == "claude-code":
         argv = ["claude", "-p", "--output-format", "text"] + (["--model", model] if model else [])

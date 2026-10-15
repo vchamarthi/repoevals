@@ -53,8 +53,7 @@ def test_analyze_finds_recurring_problems(minisci_repo, runs):
     assert ev["failing_commands"][0]["item"] == "python -m pytest" and ev["failing_commands"][0]["runs"] == 2
     assert any("SYCL device" in e["item"] for e in ev["environment"])
     assert any(x["item"] == "setup.py" and x["runs"] == 3 for x in ev["exploration"])
-    assert ev["arm_regressions"] == [{"task": "t1", "arm": "guidance:raw", "pass_rate": 0.0, "without": 1.0,
-                                      "runs": 3}]
+    assert ev["arm_regressions"] == []  # 2 raw vs 1 none attempts: too few to call
     assert ev["rule_violations"][0]["check"] == "test_tampering"
     assert any("CLAUDE.md" in c for c in ev["coverage"])  # AGENTS.md exists, CLAUDE.md does not
     # a problem seen in a single run is below the default threshold
@@ -67,9 +66,9 @@ def test_suggestions_and_markdown(minisci_repo, runs):
     ev = S.analyze(runs, cfg)
     sugg = S.suggestions(ev)
     text = "\n".join(sugg)
-    assert "python -m pytest" in text and "t1" in text and "test_tampering" in text and "setup.py" in text
+    assert "python -m pytest" in text and "test_tampering" in text and "setup.py" in text
     md = S.evidence_markdown(ev, sugg)
-    assert "## Failing commands" in md and "## Tasks worse with guidance" in md
+    assert "## Failing commands" in md and "## Rule violations with guidance" in md
 
 
 def test_deterministic_draft_is_idempotent(minisci_repo, runs, tmp_path):
@@ -202,3 +201,30 @@ def test_evidence_names_the_missing_command_and_the_files_looked_up(minisci_repo
 
 def test_draft_prompt_asks_for_minimal_edits():
     assert "smallest set of edits" in S.DRAFT_PROMPT and "Return only the" in S.DRAFT_PROMPT
+
+
+def test_lint_skips_evaluation_artifacts_and_ignored_paths(minisci_repo):
+    import subprocess
+
+    from repoevals.guidance import lint
+    (minisci_repo / ".agent-evals" / "guidance" / "draft").mkdir(parents=True)
+    (minisci_repo / ".agent-evals" / "guidance" / "draft" / "AGENTS.md").write_text("See `missing/dir/file.py`.\n")
+    (minisci_repo / ".gitignore").write_text(".asv/\n")
+    (minisci_repo / "AGENTS.md").write_text("Results go in `.asv/` (ignored); run `minisci/stats.py`.\n")
+    subprocess.run(["git", "add", "-A"], cwd=minisci_repo, check=True)
+    cfg = load_config(minisci_repo / "repoevals.toml")
+    res = lint(minisci_repo, cfg.guidance_globs, cfg.eval_globs)
+    assert res and all(r["exists"] for r in res)
+    assert not any(r["file"].startswith(".agent-evals") for r in res)
+
+
+def test_regression_needs_enough_runs_per_arm(minisci_repo, tmp_path):
+    cfg = load_config(minisci_repo / "repoevals.toml")
+    root = tmp_path / "runs"
+    for i, (arm, ok) in enumerate([("guidance:raw", False)] * 2 + [("guidance:none", True)] * 2):
+        _run(root, f"r{i}", "t1", arm, ok, [], guidance=arm != "guidance:none")
+    assert S.analyze(root, cfg)["arm_regressions"] == []  # 2 vs 2 attempts is noise
+    for i in range(2, 4):
+        _run(root, f"x{i}", "t1", "guidance:raw", False, [])
+        _run(root, f"y{i}", "t1", "guidance:none", True, [], guidance=False)
+    assert S.analyze(root, cfg)["arm_regressions"][0]["task"] == "t1"

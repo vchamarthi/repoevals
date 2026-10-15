@@ -218,7 +218,7 @@ def cmd_export(args) -> int:
 def cmd_guidance_lint(args) -> int:
     from .guidance import lint
     cfg = _cfg(args)
-    res = lint(cfg.root, cfg.guidance_globs)
+    res = lint(cfg.root, cfg.guidance_globs, cfg.eval_globs)
     missing = [r for r in res if not r["exists"]]
     for r in missing:
         print(f"MISSING {r['file']}: `{r['claim']}`")
