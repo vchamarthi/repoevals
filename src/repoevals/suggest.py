@@ -33,8 +33,8 @@ from .util import glob_match, last_json, run
 ENV_PATTERNS = [
     (r"ModuleNotFoundError: No module named '([\w.]+)'", "module {0} is not importable: say how the environment is "
                                                          "set up or which package provides it"),
-    (r"command not found: (\S+)|(\S+): command not found", "`{0}` is not available: name the right tool or how to "
-                                                           "install it"),
+    (r"command not found: ([\w.+-]+)|(?m:^(?:bash: (?:line \d+: )?)?([\w.+-]+): command not found)",
+     "`{0}` is not available on the machine agents run on: name the right tool or how to install it"),
     (r"Default device is unavailable|No device of requested type|SyclDeviceCreationError",
      "no SYCL device was found: state the device selector to use (e.g. ONEAPI_DEVICE_SELECTOR=opencl:cpu)"),
     (r"icpx(: not found| is not found)|No CMAKE_CXX_COMPILER could be found",
@@ -44,6 +44,8 @@ ENV_PATTERNS = [
      "package installation failed: say which environment to use and whether installing is allowed"),
     (r"ImportError: (.+)", "import error: {0}"),
 ]
+PATHLIKE = re.compile(r"(?<![\w./-])(?:[\w.-]+/)+[\w.-]*[\w-]|"
+                      r"(?<![\w./-])[\w-]+\.(?:py|pyx|pxd|c|cc|cpp|h|hpp|src|md|toml|build|cfg|txt|yml|yaml|json|rst)\b")
 EXPLORE = re.compile(r"^\s*(ls|find|tree|grep|rg|cat|head|tail|sed -n|git (ls-files|grep))\b")
 AGENT_FILES = {"claude-code": "CLAUDE.md", "codex": "AGENTS.md", "copilot": ".github/copilot-instructions.md",
                "gemini": "GEMINI.md"}
@@ -109,8 +111,8 @@ def analyze(runs_root: Path, cfg: RepoConfig, min_runs: int = 2) -> dict:
                         fails[key].add(rid)
                         fail_samples.setdefault(key, (e.get("output") or "")[-400:])
                 if not edited and EXPLORE.match(text):
-                    explore[f"$ {_norm_command(text, 2)} {text.split()[-1] if len(text.split()) > 1 else ''}"
-                            .strip()].add(rid)
+                    for path in PATHLIKE.findall(text):
+                        explore[path.rstrip(":,.")].add(rid)
                 out = e.get("output") or ""
                 for pat, advice in ENV_PATTERNS:
                     m = re.search(pat, out)
@@ -256,6 +258,9 @@ Rules:
   help on them. Guidance tuned to the evaluation tasks would make the evaluation meaningless.
 - Only add statements supported by the evidence or by the repository itself; be concrete (exact commands, paths,
   environment variables). Remove or fix stale references.
+- Make the smallest set of edits the evidence supports. Existing guidance is usually deliberate: keep its content,
+  structure and wording, and change or add only what the evidence or a stale reference calls for. Return only the
+  files you change, each with its complete new content.
 - Keep files short; do not repeat the same content in several files — CLAUDE.md may simply contain "@AGENTS.md".
 - Do not modify any files. Answer with a fenced ```json block: an object mapping repository-relative paths to the
   complete new content of each guidance file you want to create or change.

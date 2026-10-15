@@ -183,3 +183,22 @@ def test_lint_ignores_bare_extensions(tmp_path):
     from repoevals.guidance import claims
     assert claims("Edit `*.c.src` templates, not `.c` or `.c.src` files; see `mkl_fft/src/a.c`") == [
         "mkl_fft/src/a.c"]
+
+
+def test_evidence_names_the_missing_command_and_the_files_looked_up(minisci_repo, tmp_path):
+    cfg = load_config(minisci_repo / "repoevals.toml")
+    root = tmp_path / "runs"
+    for i in range(2):
+        _run(root, f"r{i}", "t1", "guidance:raw", True, [
+            {"kind": "command", "text": 'grep -n "def " minisci/stats.py minisci/distance.py', "rc": 0, "output": ""},
+            {"kind": "command", "text": "timeout 900 python -m pytest -q", "rc": 127,
+             "output": "(eval):1: command not found: timeout"},
+            {"kind": "edit", "path": "/x/workspace/minisci/stats.py"}])
+    ev = S.analyze(root, cfg)
+    assert any("`timeout` is not available" in e["item"] for e in ev["environment"])
+    items = {x["item"] for x in ev["exploration"]}
+    assert {"minisci/stats.py", "minisci/distance.py"} <= items and not any(i.startswith("$") for i in items)
+
+
+def test_draft_prompt_asks_for_minimal_edits():
+    assert "smallest set of edits" in S.DRAFT_PROMPT and "Return only the" in S.DRAFT_PROMPT
