@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import __version__
+from . import __version__, util
 from .config import RepoConfig
 from .task import Task, host_supports
 from .util import git, package_versions, within
@@ -120,8 +120,12 @@ def run_matrix(cfg: RepoConfig, tasks: list[Task], source: Path, out: Path, opts
                         state["warned"] = True
                         progress("warning: guidance outside the workspace (parent directories or user agent config) "
                                  "applies to every arm: " + ", ".join(meta["ancestor_guidance"]))
+                agent_env = None
+                if util.EXEC_TEMPLATE:  # tests run elsewhere: give the agent shims that forward python/pytest/pip
+                    shims = util.write_exec_shims(rd / ".repoevals" / "shims")
+                    agent_env = {"PATH": f"{shims}{os.pathsep}{os.environ.get('PATH', '')}"}
                 res = run_agent(opts.agent, rd, model=opts.model, timeout=float(t.agent.get("timeout_sec", 3600)),
-                                docker=opts.docker, network=network, extra_args=opts.agent_args,
+                                docker=opts.docker, network=network, extra_args=opts.agent_args, env=agent_env,
                                 env_passthrough=env_pass)
                 if res.status != "infra_error" or attempts > opts.retries:
                     break

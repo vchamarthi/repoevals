@@ -87,13 +87,41 @@ def run(cmd: str | Sequence[str], cwd: Path | str | None = None, timeout: float 
         sink.close()
 
 
+# `[environment].exec` (set by config.load_config): a command prefix that runs setup, build, test and benchmark
+# commands somewhere else, typically `docker exec -i {env_flags} -w {cwd} <container>`. {cwd} is the working
+# directory (the container must see the same path) and {env_flags} expands to `-e KEY=VALUE ...`.
+EXEC_TEMPLATE = ""
+
+
+def exec_prefix(cwd: Path | str | None, env: Mapping[str, str] | None = None) -> list[str]:
+    if not EXEC_TEMPLATE:
+        return []
+    flags = " ".join(f"-e {shlex.quote(f'{k}={v}')}" for k, v in (env or {}).items())
+    return shlex.split(EXEC_TEMPLATE.replace("{cwd}", shlex.quote(str(cwd or "/")))
+                       .replace("{env_flags}", flags))
+
+
 def run_shell(cmd: str, cwd: Path | str | None = None, timeout: float | None = None,
               env: Mapping[str, str] | None = None) -> Proc:
     """Run a repo-configured command line through bash (config commands may use pipes, &&, env vars).
 
     Builds, tests and benchmarks execute code the agent wrote, so they never see credentials from the environment.
+    With `[environment].exec`, the command runs through that prefix (e.g. inside a container) instead of locally.
     """
-    return run(["bash", "-c", cmd], cwd=cwd, timeout=timeout, env=env, scrub=True)
+    return run([*exec_prefix(cwd, env), "bash", "-c", cmd], cwd=cwd, timeout=timeout, env=env, scrub=True)
+
+
+def write_exec_shims(directory: Path, names: Iterable[str] = ("python", "python3", "pytest", "pip", "pip3")) -> Path:
+    """Executables that forward to the configured exec prefix, in the caller's working directory. Put the
+    directory first on an agent's PATH so `python -m pytest` runs where the project's toolchain is."""
+    directory.mkdir(parents=True, exist_ok=True)
+    template = EXEC_TEMPLATE.replace("{env_flags}", "").replace("{cwd}", '"$PWD"')
+    for name in names:
+        target = "python -m pytest" if name == "pytest" else name
+        f = directory / name
+        f.write_text(f'#!/bin/bash\nexec {template} {target} "$@"\n')
+        f.chmod(0o755)
+    return directory
 
 
 def git(repo: Path | str, *args: str, check: bool = False, stdin: str | None = None) -> Proc:

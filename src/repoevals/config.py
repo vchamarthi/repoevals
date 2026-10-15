@@ -27,7 +27,8 @@ repository's build and test tooling lives here, so graders stay generic.
     timeout_sec = 1800
     env = { ONEAPI_DEVICE_SELECTOR = "opencl:cpu" }
 
-    [environment]                         # workspace setup and agent containers (graders run on the host)
+    [environment]                         # workspace setup, agent containers, and where commands run
+    exec = "docker exec -i {env_flags} -w {cwd} mycontainer"   # optional: run setup/build/tests in a container
     image = "ghcr.io/org/repo-agent-evals:2026.10"      # or dockerfile = "..."
     network = "none"
 
@@ -114,6 +115,8 @@ def find_config(start: Path) -> Path | None:
 
 def load_config(path: Path | None = None, root: Path | None = None) -> RepoConfig:
     """Load repoevals.toml. The repository root is the config's directory (or its parent for .agent-evals/)."""
+    from . import util
+    util.EXEC_TEMPLATE = ""
     if path is None:
         path = find_config(root or Path.cwd())
     if path is None:
@@ -123,6 +126,7 @@ def load_config(path: Path | None = None, root: Path | None = None) -> RepoConfi
     cfg_root = path.parent.parent if path.parent.name == ".agent-evals" else path.parent
     repo, guid, pol = data.get("repo", {}), data.get("guidance", {}), data.get("policy", {})
     t = data.get("test", {})
+    util.EXEC_TEMPLATE = str(data.get("environment", {}).get("exec", ""))
     return RepoConfig(
         root=(root or cfg_root).resolve(),
         id=repo.get("id", cfg_root.name),

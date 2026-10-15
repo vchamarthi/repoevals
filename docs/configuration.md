@@ -113,12 +113,35 @@ Targets are always shell-quoted before they are substituted.
 | `setup` | `""` | shell command run in every fresh workspace before the agent starts, e.g. a native build. Output goes to `setup.log` in the run directory. `$REPOEVALS_ROOT` (your repository), `$REPOEVALS_SOURCE` and `$REPOEVALS_TASK_DIR` are set, so it can call scripts kept in `.agent-evals/` |
 | `setup_timeout_sec` | `7200` | time limit for `setup` |
 | `submodules` | `false` | materialize git submodules at the base revision (initialize them in the source checkout first) |
+| `exec` | `""` | command prefix that runs setup, build, test and benchmark commands elsewhere, typically in a container: `docker exec -i {env_flags} -w {cwd} <container>`. `{cwd}` is the workspace (the container must mount it at the same path) and `{env_flags}` expands to `-e KEY=VALUE` flags. Agents started by `repoevals run` get `python`, `python3`, `pytest`, `pip` and `pip3` shims first on their `PATH` that forward to the same prefix, so an agent on your laptop can run the project's tests on another platform. See [Running tests in a container](#running-tests-in-a-container) |
 | `image` | `""` | container image used by `repoevals run --docker` without an explicit image |
 | `network` | `"bridge"` | Docker network mode for agent containers. Agents that call a model API need network access |
 | `env_passthrough` | API key variables for Anthropic, OpenAI and Gemini | environment variables passed to the agent (locally and in containers); all other credentials are removed |
 | `dockerfile` | `""` | Dockerfile copied into tasks exported with `repoevals export harbor` |
 
 Graders always run on the host, in the environment where repoevals is installed.
+
+### Running tests in a container
+
+For projects that only build on another platform (for example x86-64 Linux libraries on an Apple-silicon laptop),
+keep a long-running container with the toolchain and let repoevals run everything that needs it there:
+
+```bash
+docker build --platform linux/amd64 -t myproject-eval .agent-evals/
+docker run -d --name myproject-eval --platform linux/amd64 --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v ~/.cache/repoevals:$HOME/.cache/repoevals -v ~/src:$HOME/src \
+  myproject-eval sleep infinity
+export TMPDIR=$HOME/.cache/repoevals/tmp && mkdir -p "$TMPDIR"
+```
+
+```toml
+[environment]
+exec = "docker exec -i {env_flags} -w {cwd} myproject-eval"
+```
+
+The run directories (default `~/.cache/repoevals/runs`), `TMPDIR` and the directories containing your repository and
+repoevals' own files must be mounted at the same paths. The agent itself runs on the host. Attempts share the
+container's environment, so run them one at a time (`--jobs 1`).
 
 ## `[arms]`
 

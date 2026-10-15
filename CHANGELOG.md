@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Found while evaluating dpnp and mkl_fft: release-based task authoring (`author fix --base`, `--extract-tests`,
   `author mine --release-base`, `author review-replay --base`), `[repo].upstream`, setup environment variables,
   `report --compare`, package versions recorded in runs, and mkl_fft/dpnp starter configurations.
+- `[environment].exec`: run setup, build, test and benchmark commands through a prefix such as `docker exec`, with
+  `python`/`pytest`/`pip` shims for agents running on the host.
 - Task selection supports exclusions: `!tag:legacy-env`, `!fix_*`.
 - `repoevals guidance suggest`: mine graded runs for problems agent guidance could prevent (failing commands,
   environment errors, rediscovered files, rule violations, tasks worse with guidance, stale references, files an

@@ -294,3 +294,79 @@ def test_setup_failure_message_includes_log_tail(minisci_repo, tmp_path):
     with pytest.raises(RuntimeError, match="rc=2") as exc:
         prepare(cfg, t, tmp_path / "run", minisci_repo)
     assert "BackendUnavailable no backend" in str(exc.value)
+
+
+FAKE_EXEC = """#!/usr/bin/env python3
+import os, subprocess, sys
+args, env, cwd, i = sys.argv[1:], dict(os.environ), None, 0
+log = open(os.environ["FAKE_EXEC_LOG"], "a")
+while args[i] in ("-w", "-e", "-i"):
+    if args[i] == "-w":
+        cwd = args[i + 1]; i += 2
+    elif args[i] == "-e":
+        k, v = args[i + 1].split("=", 1); env[k] = v; i += 2
+    else:
+        i += 1
+log.write(" ".join(args[i:]) + "\\n")
+sys.exit(subprocess.call(args[i:], cwd=cwd, env=env))
+"""
+
+
+@pytest.fixture
+def fake_exec(tmp_path, monkeypatch):
+    from repoevals import util
+    script = tmp_path / "fakeexec"
+    script.write_text(FAKE_EXEC)
+    script.chmod(0o755)
+    log = tmp_path / "exec.log"
+    monkeypatch.setenv("FAKE_EXEC_LOG", str(log))
+    monkeypatch.setattr(util, "EXEC_TEMPLATE", f"{script} -i {{env_flags}} -w {{cwd}}")
+    return log
+
+
+def test_run_shell_goes_through_exec_prefix(fake_exec, tmp_path):
+    from repoevals.util import run_shell
+    d = tmp_path / "w d"
+    d.mkdir()
+    p = run_shell("echo $FOO; pwd", cwd=d, env={"FOO": "a b"})
+    assert p.ok and p.out.split("\n")[0] == "a b" and p.out.strip().endswith("w d")
+    assert "bash -c echo $FOO; pwd" in fake_exec.read_text()
+
+
+def test_exec_shims_forward_to_the_prefix(fake_exec, tmp_path):
+    import subprocess
+
+    from repoevals.util import write_exec_shims
+    shims = write_exec_shims(tmp_path / "shims")
+    out = subprocess.run([str(shims / "python"), "-c", "print(40 + 2)"], cwd=tmp_path, capture_output=True, text=True)
+    assert out.stdout.strip() == "42"
+    assert "python -c print(40 + 2)" in fake_exec.read_text()
+    assert "python -m pytest" in (shims / "pytest").read_text()
+
+
+def test_setup_and_grading_run_through_exec(minisci_repo, fake_exec, tmp_path):
+    from repoevals import util
+    with open(minisci_repo / "repoevals.toml", "a") as fh:
+        fh.write('\n[environment]\nsetup = "echo built > .built"\n')
+    cfg = _cfg(minisci_repo)
+    util.EXEC_TEMPLATE = fake_exec.parent.joinpath("fakeexec").as_posix() + " -i {env_flags} -w {cwd}"
+    t = load_task(cfg.tasks_dir / "fix_var_ddof")
+    prepare(cfg, t, tmp_path / "run", minisci_repo)
+    assert (tmp_path / "run" / "workspace" / ".built").exists()
+    apply_oracle(tmp_path / "run", cfg)
+    g = grade_run(tmp_path / "run", cfg, t)
+    assert g["status"] == "pass"
+    log = fake_exec.read_text()
+    assert "echo built" in log and "pytest" in log
+
+
+def test_exec_config_is_loaded_and_reset(minisci_repo, tmp_path):
+    from repoevals import util
+    with open(minisci_repo / "repoevals.toml", "a") as fh:
+        fh.write('\n[environment]\nexec = "docker exec -i {env_flags} -w {cwd} box"\n')
+    _cfg(minisci_repo)
+    assert util.EXEC_TEMPLATE.startswith("docker exec")
+    (tmp_path / "other").mkdir()
+    from repoevals.config import load_config
+    load_config(root=tmp_path / "other")
+    assert util.EXEC_TEMPLATE == ""
