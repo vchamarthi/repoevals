@@ -51,7 +51,7 @@ Requirements: Linux or macOS (on Windows, use WSL2), Python 3.10 or newer, and g
 dependencies on Python 3.11+.
 
 ```bash
-pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.3.0"
+pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.4.0"
 ```
 
 Numerical tasks additionally need NumPy in the environment where your project's tests run.
@@ -280,7 +280,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: pip install -e .          # whatever makes your tests runnable
-      - uses: vchamarthi/repoevals@v0.3.0
+      - uses: vchamarthi/repoevals@v0.4.0
         with:
           command: check
 ```

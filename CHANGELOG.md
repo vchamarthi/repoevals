@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-15
 ## [0.3.0] - 2026-10-14
 ### Added
 
@@ -128,7 +129,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Harbor task export and agent guidance lint.
 - GitHub Action and example repository.
 
-[Unreleased]: https://github.com/vchamarthi/repoevals/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/vchamarthi/repoevals/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/vchamarthi/repoevals/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/vchamarthi/repoevals/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vchamarthi/repoevals/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vchamarthi/repoevals/releases/tag/v0.1.0

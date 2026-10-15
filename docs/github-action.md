@@ -1,7 +1,7 @@
 # GitHub Action
 
 ```yaml
-- uses: vchamarthi/repoevals@v0.3.0
+- uses: vchamarthi/repoevals@v0.4.0
   with:
     command: check
 ```
@@ -57,10 +57,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: vchamarthi/repoevals@v0.3.0
+      - uses: vchamarthi/repoevals@v0.4.0
         with:
           command: validate
-      - uses: vchamarthi/repoevals@v0.3.0
+      - uses: vchamarthi/repoevals@v0.4.0
         with:
           command: guidance-lint
   check:
@@ -73,7 +73,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[test]"
-      - uses: vchamarthi/repoevals@v0.3.0
+      - uses: vchamarthi/repoevals@v0.4.0
         with:
           command: check
           repeats: "2"
@@ -99,7 +99,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: pip install -e ".[test]" && npm install -g @anthropic-ai/claude-code
-      - uses: vchamarthi/repoevals@v0.3.0
+      - uses: vchamarthi/repoevals@v0.4.0
         id: evals
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
