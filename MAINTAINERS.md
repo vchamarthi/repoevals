@@ -58,9 +58,8 @@ fixes. The `grade.json` schema version (`repoevals.grade/v1`) changes only when 
   checks.
 - **Private vulnerability reporting:** enabled under *Settings → Code security*.
 - **Discussions:** enabled, used for questions and ideas.
-- **PyPI publishing:** add a trusted publisher on PyPI for this repository with workflow `release.yml` and
-  environment `pypi`, create the `pypi` environment under *Settings → Environments*, then set the repository variable
-  `PUBLISH_TO_PYPI` to `true`. Until then, releases are published on GitHub only.
+- **Distribution:** releases are published on GitHub only (wheel and source archive); users install from the
+  release tag. The project is not published to PyPI.
 
 ## Release process
 
@@ -78,7 +77,7 @@ fixes. The `grade.json` schema version (`repoevals.grade/v1`) changes only when 
    ```
 
 4. The `release` workflow builds the package, checks that the tag matches the package version, creates the GitHub
-   release with the changelog section, and publishes to PyPI through trusted publishing.
+   release with the changelog section, wheel and source archive.
 5. Move the major-version tag used by Action users (`v0`, later `v1`) to the new release:
 
    ```bash

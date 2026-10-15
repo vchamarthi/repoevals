@@ -45,17 +45,3 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --title "repoevals ${GITHUB_REF_NAME#v}" --notes-file notes.md
-
-  pypi:
-    needs: build
-    runs-on: ubuntu-latest
-    if: vars.PUBLISH_TO_PYPI == 'true'
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
