@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -290,8 +291,9 @@ def llm_draft(cfg: RepoConfig, ev_md: str, out: Path, agent: str, model: str = "
         argv = shlex.split(agent[4:])
     else:
         raise ValueError(f"unknown drafting agent {agent!r}: claude-code | codex | cmd:<command reading stdin>")
-    p = run(argv, cwd=cfg.root, timeout=timeout, stdin=prompt, scrub=True,
-            keep_env=["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "HOME", "PATH"])
+    with tempfile.TemporaryDirectory(prefix="repoevals-draft-") as scratch:  # no repository, tasks or hidden data
+        p = run(argv, cwd=scratch, timeout=timeout, stdin=prompt, scrub=True,
+                keep_env=["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "HOME", "PATH"])
     data = last_json(p.out)
     if not isinstance(data, dict) or not data:
         raise RuntimeError(f"the drafting agent returned no JSON object of files (rc={p.rc}): {p.out[-800:]}")

@@ -33,7 +33,13 @@ def default_runs_root(cfg: RepoConfig) -> Path:
 
 
 def arm_dirname(arm: str) -> str:
-    return arm.replace(":", "_").replace("/", "_").replace("=", "_")
+    """Directory name of an arm. Simple arms keep a readable name; arms with paths get a hash of the full value so
+    `overlay=/a_b` and `overlay=/a/b` can never share a directory."""
+    name = arm.replace(":", "_").replace("/", "_").replace("=", "_")
+    if "/" in arm or "=" in arm or "\\" in arm:
+        import hashlib
+        name = f"{name[:60]}-{hashlib.sha1(arm.encode()).hexdigest()[:8]}"
+    return name
 
 
 @dataclass
@@ -93,7 +99,7 @@ def run_matrix(cfg: RepoConfig, tasks: list[Task], source: Path, out: Path, opts
     (out / "run.json").write_text(json.dumps(manifest, indent=1))
     lock = threading.Lock()
     state = {"cost": 0.0, "stopped": "", "counts": {}, "warned": False}
-    env_pass = list(cfg.environment.get("env_passthrough", [])) or None
+    env_pass = list(cfg.environment["env_passthrough"]) if "env_passthrough" in cfg.environment else None
     network = str(cfg.environment.get("network", "bridge"))
 
     def attempt(t: Task, arm: str, rep: int) -> dict:

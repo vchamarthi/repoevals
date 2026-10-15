@@ -228,3 +228,13 @@ def test_regression_needs_enough_runs_per_arm(minisci_repo, tmp_path):
         _run(root, f"x{i}", "t1", "guidance:raw", False, [])
         _run(root, f"y{i}", "t1", "guidance:none", True, [], guidance=False)
     assert S.analyze(root, cfg)["arm_regressions"][0]["task"] == "t1"
+
+
+def test_drafting_agent_runs_in_an_empty_scratch_directory(minisci_repo, runs, tmp_path):
+    fake = tmp_path / "fake.py"
+    fake.write_text("import json, os\nprint('```json\\n' + json.dumps({'AGENTS.md': os.getcwd() + ' ' + "
+                    "str(len(os.listdir('.')))}) + '\\n```')\n")
+    cfg = load_config(minisci_repo / "repoevals.toml")
+    r = S.suggest(runs, cfg, tmp_path / "o", draft_with=f"cmd:{sys.executable} {fake}")
+    cwd, n = (Path(r["draft_dir"]) / "AGENTS.md").read_text().rsplit(" ", 1)
+    assert n == "0" and str(minisci_repo) not in cwd

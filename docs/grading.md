@@ -36,6 +36,22 @@ evidence to review, and use a container where results must be trustworthy agains
 Grading always runs on the host and executes code the agent wrote (builds, tests, benchmarks). It never receives
 your credentials, and every step has a time limit.
 
+### Known limitations
+
+These follow from running the code under evaluation, and cannot be closed by repoevals alone:
+
+- **Code under test shares a process with the test runner.** A malicious agent can make its code write a forged
+  pytest report. Integrity checks flag many tricks (shadowed modules, skips, edited tests) but not this one; for
+  results that must be trustworthy against a determined agent, run grading in a locked-down container that mounts
+  only the candidate workspace.
+- **Grading runs on the host or in the container you configure** (`[environment].exec`), with whatever that
+  environment can read. `--docker` isolates only the agent. Imports during grading can read paths the grading
+  environment exposes; keep credentials and the source checkout out of it.
+- **A local agent can read its run directory's siblings** (`.repoevals/`, shims). Use `--docker` for untrusted
+  agents.
+- **Module-level data in `probe.py` is visible to the code under test** (only the `reference` and `compare` functions
+  are hidden). Keep expected values and reference helpers inside `reference()`.
+
 ## Grading
 
 - Grading never modifies the agent's result: the tree is snapshotted before grading and restored afterwards.

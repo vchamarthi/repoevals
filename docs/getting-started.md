@@ -6,7 +6,7 @@ an agent and wire everything into CI.
 ## 1. Install
 
 ```bash
-pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.4.0"
+pip install "repoevals @ git+https://github.com/vchamarthi/repoevals@v0.4.1"
 repoevals --version
 ```
 

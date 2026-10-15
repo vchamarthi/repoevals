@@ -22,7 +22,7 @@ from pathlib import Path
 from .config import RepoConfig
 from .integrity import leak_scan
 from .task import Task
-from .util import apply_patch, git, git_commit, glob_match, resolve_rev, run
+from .util import apply_patch, git, git_commit, glob_match, resolve_rev, run, within
 
 ARMS_HELP = """arms: guidance:raw (as checked in, default) | guidance:none (all guidance files deleted) |
 guidance:file=<path> (only <path>, installed as AGENTS.md and CLAUDE.md) | guidance:overlay=<dir> (files in <dir>
@@ -85,8 +85,16 @@ def apply_arm(ws: Path, cfg: RepoConfig, arm: str) -> list[str]:
         src_path = Path(src) if Path(src).is_absolute() else cfg.root / src
         if not src_path.is_file():
             raise FileNotFoundError(f"arm {arm!r}: {src_path} not found")
-        (ws / dest).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src_path, ws / dest)
+        target = ws / dest
+        if Path(dest).is_absolute() or ".." in Path(dest).parts:
+            raise ValueError(f"arm {arm!r}: install destination {dest!r} must be a relative path inside the workspace")
+        for parent in reversed([p for p in target.parents if within(ws, p) and p != ws]):
+            if parent.is_symlink():
+                parent.unlink()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink():
+            target.unlink()
+        shutil.copy2(src_path, target)
         changed.append(dest)
     return sorted(set(changed))
 
@@ -142,7 +150,8 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     ws.mkdir()
     base_sha = resolve_rev(source, task.base, cfg.upstream)
     _extract(source, base_sha, ws)
-    removed = []
+    submodules = _materialize_submodules(source, base_sha, ws) if cfg.environment.get("submodules") else []
+    removed = []  # evaluation files are removed after submodules are in place: a submodule cannot bring them back
     for p in sorted(ws.rglob("*"), reverse=True):
         rel = p.relative_to(ws).as_posix()
         if p.is_file() and glob_match(rel, cfg.eval_globs):
@@ -151,7 +160,6 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
     for d in sorted((p for p in ws.rglob("*") if p.is_dir()), reverse=True):
         if not any(d.iterdir()):
             d.rmdir()
-    submodules = _materialize_submodules(source, base_sha, ws) if cfg.environment.get("submodules") else []
     # make ws its own repository before applying patches: `git apply` run inside a subdirectory of another
     # repository (e.g. runs/ under the source checkout) silently skips paths outside that subdirectory
     git(ws, "init", "-q", "-b", "main", check=True)
@@ -188,6 +196,12 @@ def prepare(cfg: RepoConfig, task: Task, run_dir: Path, source: Path, arm: str =
                                f"--- last lines of setup output ---\n{tail}")
     start = git_commit(ws, "workspace")
     if task.has(task.grader.get("review_patch", "review.patch")):
+        touched = re.findall(r"^diff --git a/(\S+) b/(\S+)", task.file(task.grader.get("review_patch", "review.patch"))
+                             .read_text(errors="replace"), re.M)
+        leaked = sorted({p for pair in touched for p in pair if glob_match(p, cfg.eval_globs)})
+        if leaked:
+            raise RuntimeError(f"{task.id}: review.patch touches evaluation paths {leaked}: they would reappear in "
+                               "the agent's workspace")
         ap = apply_patch(ws, task.file(task.grader.get("review_patch", "review.patch")))
         if not ap.ok:
             raise RuntimeError(f"{task.id}: review.patch does not apply: {ap.out[:1000]}")

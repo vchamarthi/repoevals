@@ -20,13 +20,21 @@ def load_grades(root: Path) -> list[dict]:
     """Every grade.json under root that repoevals wrote next to a meta.json. Unreadable grades are returned as
     status "error" records instead of being dropped, so they are visible in the report."""
     out = []
-    found = []
+    found, seen_dirs, seen_runs = [], set(), set()
     for dirpath, dirnames, files in os.walk(root, followlinks=True):  # runs may be symlinked into a subset
+        ident = (os.stat(dirpath).st_dev, os.stat(dirpath).st_ino)
+        if ident in seen_dirs:  # a symlink back to a directory already visited (cycle or duplicate)
+            dirnames[:] = []
+            continue
+        seen_dirs.add(ident)
         if "workspace" in dirnames:
             dirnames.remove("workspace")
         dirnames[:] = [d for d in dirnames if d != ".repoevals"]
         if "grade.json" in files and "meta.json" in files:
-            found.append(Path(dirpath) / "grade.json")
+            real = Path(dirpath).resolve()
+            if real not in seen_runs:
+                seen_runs.add(real)
+                found.append(Path(dirpath) / "grade.json")
     for p in sorted(found):
         try:
             g = json.loads(p.read_text())
@@ -43,10 +51,11 @@ def load_grades(root: Path) -> list[dict]:
 
 
 def config_key(g: dict) -> str:
-    """label|agent|model|arm; `cmd:` agents are shown as "cmd" (the command line is in meta.json)."""
+    """label|agent|model|arm; a `cmd:` agent is shown as cmd#<hash of its command line> (full line in meta.json)."""
     agent = g.get("agent") or "?"
     if agent.startswith("cmd:"):
-        agent = "cmd"
+        import hashlib
+        agent = "cmd#" + hashlib.sha1(agent.encode()).hexdigest()[:6]  # distinct commands stay distinct
     key = f"{agent}|{g.get('model') or '-'}|{g.get('arm') or '-'}"
     return f"{g['label']}|{key}" if g.get("label") else key
 
@@ -85,6 +94,7 @@ def summarize(grades: list[dict], compare: str = "") -> dict:
     scores: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     status = defaultdict(lambda: defaultdict(int))
     cost: dict[str, float | None] = {}
+    cost_unknown: set[str] = set()
     tokens = defaultdict(int)
     seconds = defaultdict(list)
     runs = defaultdict(int)
@@ -101,10 +111,12 @@ def summarize(grades: list[dict], compare: str = "") -> dict:
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 scores[arm][f"{g['task']}:{m}"].append(float(v))
         pr = g.get("process") or {}
-        if pr.get("cost_usd") is not None:
+        if arm in cost_unknown:
+            pass
+        elif pr.get("cost_usd") is not None and g.get("status") != "skipped":
             cost[arm] = (cost.get(arm) or 0.0) + float(pr["cost_usd"])
-        else:
-            cost.setdefault(arm, None)
+        elif g.get("agent") not in (None, "noop") and g.get("status") not in ("skipped", "error"):
+            cost_unknown.add(arm)  # one run without a reported cost makes the total unknown
         tokens[arm] += (pr.get("input_tokens") or 0) + (pr.get("output_tokens") or 0)
         if isinstance(g.get("agent_seconds"), (int, float)):
             seconds[arm].append(float(g["agent_seconds"]))
@@ -119,7 +131,7 @@ def summarize(grades: list[dict], compare: str = "") -> dict:
     for arm in sorted(runs):
         res = by_arm.get(arm, {})
         entry: dict = {"n_runs": runs[arm], "n_tasks": len(res), "status": dict(status[arm]),
-                       "cost_usd": None if cost.get(arm) is None else round(cost[arm], 4),
+                       "cost_usd": None if arm in cost_unknown or cost.get(arm) is None else round(cost[arm], 4),
                        "tokens": tokens[arm], "agent_seconds_median": _median(seconds[arm]),
                        "trace": "partial" if arm in partial_trace else "full",
                        "scores": {k: round(sum(v) / len(v), 4) for k, v in sorted(scores[arm].items())}}

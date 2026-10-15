@@ -47,8 +47,8 @@ def run(cmd: str | Sequence[str], cwd: Path | str | None = None, timeout: float 
         keep_env: Iterable[str] = (), output_file: Path | None = None) -> Proc:
     """Run a command, merging stderr into stdout. A string is split with shlex (no shell).
 
-    The command gets its own process group; on timeout the whole group is killed, so background processes an agent
-    or a test suite started cannot keep running (and editing the workspace) after the deadline.
+    The command gets its own process group, and the whole group is killed when the command ends (or times out), so
+    background processes an agent or a test suite started cannot keep running and editing the workspace.
     """
     import signal
     import tempfile
@@ -77,6 +77,11 @@ def run(cmd: str | Sequence[str], cwd: Path | str | None = None, timeout: float 
             except (ProcessLookupError, PermissionError):
                 proc.kill()
             proc.communicate()
+        else:
+            try:  # background processes the command left behind must not keep editing the tree afterwards
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
         size = sink.seek(0, os.SEEK_END)
         sink.seek(max(0, size - MAX_OUTPUT))
         out = sink.read().decode("utf-8", errors="replace")
@@ -194,9 +199,10 @@ class WorkTree:
     def stage(self, base: str) -> None:
         self.git("read-tree", base, check=True)
         self.git("add", "-A", "--", ".")
-        if self.force_globs:
+        if True:
             ignored = self.git("ls-files", "--others", "--ignored", "--exclude-standard").out.splitlines()
-            forced = [p for p in ignored if glob_match(p, self.force_globs) and not glob_match(p, NOISE_GLOBS)]
+            # everything the agent's .gitignore hides is graded too, except generated noise (bytecode, build output)
+            forced = [p for p in ignored if not glob_match(p, NOISE_GLOBS)]
             for i in range(0, len(forced), 200):
                 self.git("add", "-f", "--", *forced[i:i + 200])
 

@@ -236,10 +236,11 @@ def test_runner_shadowing_is_an_integrity_violation(minisci_repo, tmp_path):
     assert any(f["check"] == "runner_shadowing" for f in g["integrity"]["integrity_findings"])
 
 
-def test_report_names_cmd_agents_briefly():
+def test_report_keeps_distinct_cmd_agents_apart():
     from repoevals.report import config_key
-    assert config_key({"agent": "cmd:python /long/path/agent.py x {prompt_file}", "arm": "guidance:raw",
-                       "label": "oracle"}) == "oracle|cmd|-|guidance:raw"
+    k1 = config_key({"agent": "cmd:agent-a {prompt_file}", "arm": "guidance:raw"})
+    k2 = config_key({"agent": "cmd:agent-b {prompt_file}", "arm": "guidance:raw"})
+    assert k1 != k2 and k1.startswith("cmd#") and k1.endswith("|-|guidance:raw")
 
 
 def test_report_compare_restricts_pairs():
@@ -444,3 +445,138 @@ def test_errored_attempts_join_their_configuration():
               {"task": "t2", "agent": "a", "model": None, "arm": "raw", "status": "error", "pass": None}]
     s = summarize(grades)
     assert list(s["arms"]) == ["a|m1|raw"] and s["arms"]["a|m1|raw"]["status"] == {"pass": 1, "error": 1}
+
+
+# ------------------------------------------------------------------------- second code review (v0.4.0)
+
+def test_background_processes_do_not_outlive_the_command(tmp_path):
+    import time
+
+    from repoevals.util import run_shell
+    late = tmp_path / "late.txt"
+    run_shell(f"(sleep 1; echo late > {late}) & echo started", cwd=tmp_path)
+    time.sleep(2)
+    assert not late.exists()
+
+
+def test_empty_env_passthrough_means_none(minisci_repo, tmp_path):
+    from repoevals.agents import DEFAULT_PASSTHROUGH, run_agent
+    rd = tmp_path / "run"
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", rd)
+    cmd = f"cmd:{sys.executable} -c \"import os; print(os.environ.get('ANTHROPIC_API_KEY', 'absent'))\""
+    os.environ["ANTHROPIC_API_KEY"] = "sk-test"
+    try:
+        assert run_agent(cmd, rd, env_passthrough=[]).answer.strip() == "absent"
+        assert "ANTHROPIC_API_KEY" in DEFAULT_PASSTHROUGH
+        assert run_agent(cmd, rd, env_passthrough=None).answer.strip() == "sk-test"
+    finally:
+        del os.environ["ANTHROPIC_API_KEY"]
+
+
+def test_arm_directories_are_injective():
+    from repoevals.runner import arm_dirname
+    a, b = arm_dirname("guidance:overlay=/tmp/a_b"), arm_dirname("guidance:overlay=/tmp/a/b")
+    assert a != b
+    assert arm_dirname("guidance:raw") == "guidance_raw"
+
+
+def test_named_arm_install_cannot_escape_the_workspace(minisci_repo, tmp_path):
+    (minisci_repo / "x.md").write_text("x\n")
+    for dest in ("../escape.md", "/tmp/escape.md"):
+        with open(minisci_repo / "repoevals.toml", "a") as fh:
+            fh.write(f'\n[arms.bad{abs(hash(dest))}]\ninstall = {{ "{dest}" = "x.md" }}\n')
+        name = f"bad{abs(hash(dest))}"
+        with pytest.raises(ValueError, match="inside the workspace"):
+            _prep(minisci_repo, "fix_var_ddof", tmp_path / f"run{name}", name)
+    assert not (tmp_path / "escape.md").exists()
+
+
+def test_author_ids_cannot_leave_the_tasks_directory(minisci_repo):
+    from repoevals.authoring import task_path
+    cfg = _cfg(minisci_repo)
+    assert task_path(cfg, "fix_ok").parent == cfg.tasks_dir
+    for bad in ("../../x", "/abs", "..", "a/b", ""):
+        with pytest.raises(ValueError):
+            task_path(cfg, bad)
+
+
+def test_check_with_no_matching_tasks_fails(minisci_repo, monkeypatch, capsys):
+    from repoevals.cli import main
+    monkeypatch.chdir(minisci_repo)
+    assert main(["check", "typoed-task"]) == 1
+    assert "no tasks match" in capsys.readouterr().out
+
+
+def test_review_patch_cannot_reintroduce_evaluation_files(minisci_repo, tmp_path):
+    cfg = _cfg(minisci_repo)
+    t = load_task(cfg.tasks_dir / "review_clean_control")
+    patch = t.dir / "review.patch"
+    original = patch.read_text()
+    patch.write_text(original + "diff --git a/.agent-evals/tasks/x/answer.txt b/.agent-evals/tasks/x/answer.txt\n"
+                                "new file mode 100644\n--- /dev/null\n+++ b/.agent-evals/tasks/x/answer.txt\n"
+                                "@@ -0,0 +1 @@\n+secret\n")
+    with pytest.raises(RuntimeError, match="evaluation paths"):
+        prepare(cfg, t, tmp_path / "run", minisci_repo)
+
+
+def test_gitignore_cannot_hide_files_from_grading(minisci_repo, tmp_path):
+    cfg, t, ws = _prep(minisci_repo, "fix_var_ddof", tmp_path / "run")
+    (ws / ".gitignore").write_text("hidden_module.py\n")
+    (ws / "hidden_module.py").write_text("SECRET = 1\n")
+    from repoevals.grade import context
+    ctx = context(tmp_path / "run", cfg, t)
+    assert "hidden_module.py" in ctx.tree().changed(ctx.start_sha)
+
+
+def test_mutant_that_cannot_be_reverted_is_a_grader_error(minisci_repo, tmp_path):
+    cfg, t, ws = _prep(minisci_repo, "test_chebyshev", tmp_path / "run")
+    (ws / "tests" / "test_weak.py").write_text(
+        "import minisci\nfrom pathlib import Path\n\n\n"
+        "def test_x():\n    assert minisci.chebyshev([0.0], [0.0]) == 0.0\n")
+    (tmp_path / "run" / "answer.txt").write_text('```json\n{"targets": ["tests/test_weak.py"]}\n```')
+    sabotage = ws / "tests" / "test_weak.py"
+    sabotage.write_text(sabotage.read_text() + (
+        "\n\ndef test_sabotage():\n    p = Path(__file__).parent.parent / 'minisci' / 'distance.py'\n"
+        "    p.write_text(p.read_text() + '\\n# touched by a test\\n')\n"))
+    g = grade_run(tmp_path / "run", cfg, t)
+    assert g["status"] in ("error", "fail") and (g["status"] == "error" or g["pass"] is False)
+
+
+def test_report_deduplicates_symlinked_runs_and_survives_cycles(tmp_path):
+    from repoevals.report import load_grades
+    a = tmp_path / "runs" / "t1" / "r0"
+    a.mkdir(parents=True)
+    (a / "meta.json").write_text("{}")
+    (a / "grade.json").write_text(json.dumps({"task": "t1", "status": "pass", "pass": True}))
+    (tmp_path / "runs" / "alias").symlink_to(tmp_path / "runs" / "t1")
+    (a / "loop").symlink_to(tmp_path / "runs")
+    assert len(load_grades(tmp_path / "runs")) == 1
+
+
+def test_one_run_without_cost_makes_the_total_unknown():
+    grades = [{"task": "t1", "agent": "a", "model": "m", "arm": "raw", "status": "pass", "pass": True,
+               "process": {"cost_usd": 1.25}},
+              {"task": "t2", "agent": "a", "model": "m", "arm": "raw", "status": "pass", "pass": True, "process": {}}]
+    assert summarize(grades)["arms"]["a|m|raw"]["cost_usd"] is None
+    assert summarize(grades[:1])["arms"]["a|m|raw"]["cost_usd"] == 1.25
+
+
+def test_review_mentioning_an_invalid_key_is_not_an_infra_error():
+    acted = [{"kind": "command", "text": "ls", "rc": 0}]
+    review = "Invalid API key handling returns the wrong status code in the new helper."
+    assert classify(0, False, review, review, acted)[0] == "ok"
+    notice = "Invalid API key · Please run /login"
+    assert classify(0, False, notice, notice, acted)[0] == "infra_error"
+
+
+def test_fail_under_fails_closed(minisci_repo, tmp_path, monkeypatch):
+    from repoevals.cli import main
+    monkeypatch.chdir(minisci_repo)
+    out = tmp_path / "runs"
+    err = out / "t" / "r0"
+    err.mkdir(parents=True)
+    (err / "meta.json").write_text("{}")
+    (err / "grade.json").write_text(json.dumps({"task": "t", "agent": "a", "arm": "raw", "status": "error",
+                                                "pass": None}))
+    assert main(["report", str(out), "--fail-under", "0.1"]) == 1
+    assert main(["report", str(tmp_path / "nothing"), "--fail-under", "0.1"]) == 1

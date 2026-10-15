@@ -31,9 +31,11 @@ from .util import fmt, run
 DEFAULT_PASSTHROUGH = ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY",
                        "OPENAI_BASE_URL", "GEMINI_API_KEY"]
 # the agent's final message itself says it could not work (usage caps end the session with exit code 0)
-LIMIT_ANSWER = re.compile(r"(hit your (session|usage|weekly|daily) limit|usage limit (reached|exceeded)|"
-                          r"rate limit (reached|exceeded)|credit balance is too low|quota exceeded|"
-                          r"please run /login|not logged in|invalid api key)", re.I)
+LIMIT_ANSWER = re.compile(
+    r"^\W*((you('ve| have)? )?(hit|reached) your (session|usage|weekly|daily) limit|usage limit (reached|exceeded)|"
+    r"rate limit (reached|exceeded)|credit balance is too low|quota exceeded|please run /login|not logged in|"
+    r"invalid api key)"
+    r"(\W+(resets?\b[^\n]*|please run /login\W*|try again[^\n]*|upgrade[^\n]*))?\W*$", re.I)
 INFRA_PATTERNS = re.compile(
     r"(rate[ _-]?limit|session limit|usage limit|"
     r"429|overloaded|529|authenticat|unauthori[sz]ed|401\b|invalid api key|api key|credit balance|"
@@ -70,7 +72,7 @@ def classify(rc: int, timed_out: bool, out: str, answer: str, events: list[dict]
         return "timeout", "time limit reached"
     if rc == 127:
         return "infra_error", "agent CLI not found"
-    m = LIMIT_ANSWER.search(answer[-2000:])
+    m = LIMIT_ANSWER.match(answer.strip())  # the whole message is the notice, not a review mentioning it
     if m and len(answer.strip()) < 600:  # a short final message that is only the limit/auth notice
         return "infra_error", f"agent stopped: {m.group(0)}"
     if not traced:  # cmd: agents may legitimately work silently; only clear CLI failures count
@@ -126,17 +128,18 @@ def run_agent(agent: str, run_dir: Path, model: str = "", timeout: float = 3600,
     else:
         raise ValueError(f"unknown agent {agent!r}: claude-code | codex | noop | cmd:<template>")
     argv += shlex.split(extra_args)
+    passthrough = DEFAULT_PASSTHROUGH if env_passthrough is None else list(env_passthrough)  # [] means none
     container = ""
     if docker:
         import uuid
         container = f"repoevals-{uuid.uuid4().hex[:12]}"
-        argv = _docker_wrap(argv, ws, docker, network, list(env_passthrough or DEFAULT_PASSTHROUGH), container,
+        argv = _docker_wrap(argv, ws, docker, network, passthrough, container,
                             [prompt_file])
     t0 = time.time()
     log = run_dir / "agent_stdout.log"
     # credentials are removed from the agent's environment except those it needs to reach its model API
     p = run(argv, cwd=ws, timeout=timeout, env=env, stdin=prompt, scrub=True,
-            keep_env=list(env_passthrough or DEFAULT_PASSTHROUGH) + ["HOME", "PATH"], output_file=log)
+            keep_env=[*passthrough, "HOME", "PATH"], output_file=log)
     if container and p.timed_out:  # the container outlives a killed `docker run` client
         run(["docker", "kill", container])
     if converter:

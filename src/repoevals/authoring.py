@@ -32,6 +32,17 @@ PR_NUM = re.compile(r"(?:\(#(\d+)\)\s*$|Merge pull request #(\d+))")
 CODE_EXT = re.compile(r"\.(py|pyx|pxd|pxi|c|cc|cpp|cxx|h|hh|hpp|cu|cuh|f90|f|rs|go|java|kt|ts|js|jl|m|src)$")
 
 
+def task_path(cfg: RepoConfig, task_id: str) -> Path:
+    """Directory of a task by id; ids are plain names, so a path can never leave the tasks directory."""
+    from .task import TASK_ID_RE
+    if not TASK_ID_RE.match(task_id) or task_id in (".", ".."):
+        raise ValueError(f"invalid task id {task_id!r}: use letters, digits, '.', '_' and '-' only")
+    d = (cfg.tasks_dir / task_id).resolve()
+    if d.parent != cfg.tasks_dir.resolve():
+        raise ValueError(f"task id {task_id!r} resolves outside {cfg.tasks_dir}")
+    return d
+
+
 def slug(text: str, n: int = 40) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
     if len(s) > n:
@@ -253,7 +264,7 @@ def scaffold_fix(cfg: RepoConfig, source: Path, commit: str, task_id: str = "", 
     if not task_id:
         short = re.sub(r"^(fix(es|ed)?|add(s|ed)?)\b[:\s]*", "", subject, flags=re.I)
         task_id = f"{family}_{slug(short, 32)}"
-    d = cfg.tasks_dir / task_id
+    d = task_path(cfg, task_id)
     if d.exists():
         if not force:
             raise FileExistsError(f"{d} exists (use --force to overwrite)")
@@ -437,7 +448,7 @@ def scaffold_replay(cfg: RepoConfig, source: Path, pr: int, repo_slug: str = "",
         raise RuntimeError(f"reviewed commit {rev[:12]} is not available locally; fetch it and retry")
     base = git(source, "merge-base", info["base"]["sha"], rev).out.strip() or info["base"]["sha"]
     task_id = task_id or f"review_replay_pr{pr}"
-    d = cfg.tasks_dir / task_id
+    d = task_path(cfg, task_id)
     if d.exists():
         if not force:
             raise FileExistsError(f"{d} exists (use --force to overwrite)")
@@ -633,7 +644,7 @@ def scaffold_mutation(cfg: RepoConfig, source: Path, task_id: str, path: str, fu
                       base: str = "") -> Path:
     """Create a draft test-writing task (task.toml, instruction template, oracle_tests/) if it does not exist."""
     import time
-    d = cfg.tasks_dir / task_id
+    d = task_path(cfg, task_id)
     if (d / "task.toml").exists():
         return d
     (d / "oracle_tests").mkdir(parents=True, exist_ok=True)
@@ -670,7 +681,7 @@ def prune_mutants(cfg: RepoConfig, source: Path, task_id: str) -> dict:
     """Grade the reference tests against every mutant; move mutants they do not kill to mutants_rejected/."""
     from .grade import apply_oracle, grade_run
     from .workspace import prepare
-    t = load_task(cfg.tasks_dir / task_id)
+    t = load_task(task_path(cfg, task_id))
     if t.grader_type != "mutation":
         raise ValueError(f"{task_id} is not a mutation task")
     with tempfile.TemporaryDirectory(prefix="repoevals-prune-") as td:
@@ -720,7 +731,7 @@ def approve(cfg: RepoConfig, task_ids: list[str]) -> list[str]:
     """Set status = "ready" in each task.toml. Refuses tasks whose instruction is still the draft template."""
     done = []
     for tid in task_ids:
-        d = cfg.tasks_dir / tid
+        d = task_path(cfg, tid)
         t = load_task(d)
         if DRAFT_MARKER in t.instruction:
             raise ValueError(f"{tid}: instruction.md is still the draft template")

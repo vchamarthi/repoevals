@@ -88,7 +88,7 @@ runs:
         [ -n "$RE_CONFIG" ] && cfg=(--config "$RE_CONFIG")
         read -r -a tasks <<< "$RE_TASKS"
         if [ "$RE_CMD" = "check" ] && [ "$RE_CHANGED" = "true" ] && [ -n "$RE_BASE" ] && [ ${#tasks[@]} -eq 0 ]; then
-          tdir=$(python -c "from repoevals.config import load_config; c=load_config(); print(c.tasks)" 2>/dev/null || echo .agent-evals/tasks)
+          tdir=$(RE_CONFIG="$RE_CONFIG" python -c "import os; from pathlib import Path; from repoevals.config import load_config; p=os.environ.get('RE_CONFIG'); print(load_config(Path(p) if p else None).tasks)" 2>/dev/null || echo .agent-evals/tasks)
           git fetch -q --depth=1 origin "$RE_BASE" || true
           if git diff --name-only "$RE_BASE" | grep -qE '(^|/)repoevals\.toml$|^\.agent-evals/graders/'; then
             echo "configuration or graders changed: checking all tasks"

@@ -113,6 +113,9 @@ def cmd_check(args) -> int:
     from .check import check_all
     cfg = _cfg(args)
     tasks = _tasks(cfg, args.tasks)
+    if not tasks:
+        print(f"no tasks match {args.tasks or 'the configuration'} in {cfg.tasks_dir}")
+        return 1
     res = check_all(tasks, cfg, _source(args, cfg), repeats=args.repeats,
                     keep=Path(args.keep).resolve() if args.keep else None)
     bad = 0
@@ -131,7 +134,8 @@ def cmd_check(args) -> int:
 def cmd_prepare(args) -> int:
     from .workspace import prepare
     cfg = _cfg(args)
-    t = load_task(cfg.tasks_dir / args.task) if not Path(args.task).is_dir() else load_task(Path(args.task))
+    from .authoring import task_path
+    t = load_task(Path(args.task)) if Path(args.task).is_dir() else load_task(task_path(cfg, args.task))
     meta = prepare(cfg, t, Path(args.run_dir).resolve(), _source(args, cfg), args.arm)
     print(json.dumps(meta, indent=1))
     return 0
@@ -196,10 +200,11 @@ def cmd_report(args) -> int:
     print(md)
     _step_summary_text(md)
     if args.fail_under is not None:
-        low = [k for k, a in s["arms"].items() if a.get("mean_pass_rate") is not None
-               and a["mean_pass_rate"] < args.fail_under]
-        if low:
-            print(f"pass rate below {args.fail_under}: {', '.join(low)}")
+        graded = {k: a for k, a in s["arms"].items() if a.get("mean_pass_rate") is not None}
+        low = [k for k, a in graded.items() if a["mean_pass_rate"] < args.fail_under]
+        ungraded = [k for k in s["arms"] if k not in graded]
+        if not graded or low or ungraded:  # no pass/fail results at all must not look like success
+            print(f"pass rate below {args.fail_under} or not measured: {', '.join(low + ungraded) or 'no graded runs'}")
             return 1
     return 0
 

@@ -89,7 +89,9 @@ def g_mutation(ctx: GradeContext) -> dict:
                 per[m.stem], survived = "survived", survived + 1
             else:
                 per[m.stem], invalid = f"invalid:{r.status}", invalid + 1
-            apply_patch(ws, m, reverse=True)
+            rv = apply_patch(ws, m, reverse=True)
+            if not rv.ok:  # the mutated file was altered by tests or tools: later results would be unsound
+                raise RuntimeError(f"mutant {m.name} could not be reverted: {rv.out[:300]}")
         valid = killed + survived
         suspicious = []
         for tgt in sorted({t.split("::")[0] for t in targets}):

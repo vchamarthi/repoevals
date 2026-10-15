@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-15
+
+### Fixed
+
+- Processes a command leaves running in the background are killed when the command ends, not only on timeout.
+- `env_passthrough = []` now means no credentials (it previously restored the defaults).
+- Arm directories are collision-free for arms containing paths (`overlay=/a_b` vs `overlay=/a/b`).
+- Named-arm `install` destinations cannot leave the workspace (absolute paths, `..`, symlinks).
+- `author` commands validate task ids and cannot write or delete outside the tasks directory.
+- `check` fails when no task matches the selection; the Action honours `config` when listing changed tasks.
+- Review patches that touch evaluation paths are rejected; submodules are materialized before evaluation files are
+  removed.
+- Files hidden by the agent's `.gitignore` are graded and appear in the agent's diff (only bytecode and build output
+  are ignored).
+- Mutation grading fails loudly when a mutant cannot be reverted.
+- Reports: symlinked runs are counted once and cycles are safe; a configuration's cost is `n/a` if any run lacks
+  one; distinct `cmd:` agents stay separate; `--fail-under` fails when nothing was measured.
+- Limit and authentication notices are infrastructure errors only when the whole message is the notice.
+- The guidance drafting agent runs in an empty scratch directory.
+- Documented the remaining limitations of grading untrusted code (`docs/grading.md`).
+
 ## [0.4.0] - 2026-10-15
 ## [0.3.0] - 2026-10-14
 ### Added
@@ -129,7 +150,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Harbor task export and agent guidance lint.
 - GitHub Action and example repository.
 
-[Unreleased]: https://github.com/vchamarthi/repoevals/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/vchamarthi/repoevals/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/vchamarthi/repoevals/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/vchamarthi/repoevals/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/vchamarthi/repoevals/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vchamarthi/repoevals/compare/v0.1.0...v0.2.0
